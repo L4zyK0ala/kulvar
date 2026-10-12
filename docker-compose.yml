@@ -1,0 +1,25 @@
+# Usage: cp .env.example .env  (fill in KULVAR_ENCRYPTION_KEY)  ->  docker compose up -d
+# Pulls the published image; if it can't be pulled, it is built from this folder.
+services:
+  kulvar:
+    image: ghcr.io/l4zyk0ala/kulvar:latest
+    build: .
+    container_name: kulvar
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+      KULVAR_DATABASE_URL: sqlite:////data/kulvar.db
+    # Only reachable from this machine by default; put a reverse proxy such as nginx in front.
+    # Kulvar has no login: never expose this port to the internet.
+    ports:
+      - "127.0.0.1:8010:8010"
+    volumes:
+      - kulvar-db:/data
+      - kulvar-health:/app/app/data
+      - kulvar-uploads:/app/app/static/uploads
+
+volumes:
+  kulvar-db:
+  kulvar-health:
+  kulvar-uploads:

@@ -74,7 +74,26 @@ Saat, koşu uygulaması, salon kaydı ve beslenme günlüğü antrenmanının ay
 <img src="docs/screenshots/tr/mobile-panel-dark.png" width="260" alt="Mobil, koyu tema">
 </p>
 
-## Demo veriyle dene
+## Docker ile çalıştır
+
+```bash
+git clone https://github.com/L4zyK0ala/kulvar.git && cd kulvar
+cp .env.example .env
+# KULVAR_ENCRYPTION_KEY'e bir anahtar yaz, örneğin şu komutun çıktısı:
+openssl rand -base64 32 | tr '+/' '-_'
+docker compose up -d
+```
+
+`http://127.0.0.1:8010` adresini aç. İmajlar **amd64 ve arm64** (Raspberry Pi 4/5) için yayımlanır; `docker compose` imajı çekemezse yerelde oluşturur.
+
+- **Demo veriyle dene** (boş veritabanında): `docker compose run --rm kulvar python scripts/seed_demo.py`
+- **Güncelle:** `docker compose pull && docker compose up -d`
+- **Veritabanını yedekle:** `docker compose cp kulvar:/data/kulvar.db ./kulvar-yedek.db`
+- **Veriler** üç volume'da durur (veritabanı, sağlık belgeleri, profil resimleri); güncellemelerde korunur.
+- **Saat dilimi:** `.env` dosyasına `TZ=Europe/Istanbul` (ya da kendi bölgen) yaz; paneldeki "bugün" ve akşam kontrolü yerel saati kullanır.
+- **Port:** yalnızca `127.0.0.1` üzerinden açılır. Önüne nginx koy; değiştirmeden önce [Güvenlik ve gizlilik](#güvenlik-ve-gizlilik) bölümünü oku.
+
+## Demo veriyle dene (Docker olmadan)
 
 Hesap bağlamak gerekmez:
 

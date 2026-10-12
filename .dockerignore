@@ -1,0 +1,13 @@
+.git
+.github
+.env
+*.db
+*.db-journal
+venv
+.venv
+__pycache__
+*.pyc
+docs
+deploy
+app/data
+app/static/uploads

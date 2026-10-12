@@ -74,7 +74,26 @@ Garmin Connect, Strava, Hevy, and MyFitnessPal each keep a slice of your trainin
 <img src="docs/screenshots/mobile-panel-dark.png" width="260" alt="Mobile, dark">
 </p>
 
-## Try it with demo data
+## Run with Docker
+
+```bash
+git clone https://github.com/L4zyK0ala/kulvar.git && cd kulvar
+cp .env.example .env
+# put a key in KULVAR_ENCRYPTION_KEY, e.g. the output of:
+openssl rand -base64 32 | tr '+/' '-_'
+docker compose up -d
+```
+
+Open `http://127.0.0.1:8010`. Images are published for **amd64 and arm64** (Raspberry Pi 4/5), and `docker compose` builds one locally if it can't pull it.
+
+- **Try it with demo data** (on an empty database): `docker compose run --rm kulvar python scripts/seed_demo.py --lang en`
+- **Update:** `docker compose pull && docker compose up -d`
+- **Back up the database:** `docker compose cp kulvar:/data/kulvar.db ./kulvar-backup.db`
+- **Data** lives in three volumes (database, health documents, avatars), so updates keep it.
+- **Time zone:** set `TZ=Europe/Istanbul` (or yours) in `.env`; the dashboard's "today" and the evening check use local time.
+- **Port:** published on `127.0.0.1` only. Put nginx in front, and see [Security and privacy](#security-and-privacy) before changing that.
+
+## Try it with demo data (without Docker)
 
 No accounts needed:
 
