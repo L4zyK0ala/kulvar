@@ -1,4 +1,4 @@
-# Contributing to Kinetra
+# Contributing to Kulvar
 
 Thanks for helping out. Bug reports, fixes, translations and new integrations are all welcome.
 
@@ -11,7 +11,7 @@ Thanks for helping out. Bug reports, fixes, translations and new integrations ar
 
 ## Keep personal data out
 
-Kinetra handles health and training data, so anything posted here is public. **Never include real personal data** in issues, pull requests, screenshots or test files:
+Kulvar handles health and training data, so anything posted here is public. **Never include real personal data** in issues, pull requests, screenshots or test files:
 - names, emails, GPS routes, heart-rate or lab values, health notes,
 - API keys, Telegram bot tokens, cookies, `.env` contents.
 
@@ -21,9 +21,9 @@ Use the demo data for screenshots and examples.
 
 ```bash
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
-cp .env.example .env    # put a key in FITDASH_ENCRYPTION_KEY (the command is in the file)
-FITDASH_DATABASE_URL=sqlite:///demo.db venv/bin/python scripts/seed_demo.py --lang en
-FITDASH_DATABASE_URL=sqlite:///demo.db venv/bin/uvicorn app.main:app --reload --port 8010
+cp .env.example .env    # put a key in KULVAR_ENCRYPTION_KEY (the command is in the file)
+KULVAR_DATABASE_URL=sqlite:///demo.db venv/bin/python scripts/seed_demo.py --lang en
+KULVAR_DATABASE_URL=sqlite:///demo.db venv/bin/uvicorn app.main:app --reload --port 8010
 ```
 
 Open `http://127.0.0.1:8010` and pick a demo profile. You don't need any Garmin, Strava, Hevy, MyFitnessPal, Claude or Telegram account for UI work. `ANTHROPIC_API_KEY` and `TELEGRAM_BOT_TOKEN` can stay empty.

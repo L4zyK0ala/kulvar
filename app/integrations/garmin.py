@@ -12,7 +12,7 @@ from ..crypto import encrypt_payload
 from ..models import Activity, Credential, DailyMetric, PlannedWorkout, Profile
 from . import SyncResult, register_connect, register_sync
 
-logger = logging.getLogger("fitdash.garmin")
+logger = logging.getLogger("kulvar.garmin")
 
 # Garmin'in workout-oluşturma API'sinde desteklenen sport type ID/key çiftleri
 # (garminconnect.workout modülündeki *Workout sınıflarının varsayılanlarıyla eşleşir).
@@ -313,7 +313,7 @@ def reschedule_planned_workout(payload: dict, planned: PlannedWorkout, old_date:
     """Garmin takvimindeki planlı antrenmanı old_date'ten planned.date'e taşır ve
     antrenman adını planned.title ile eşitler (ör. Monday Easy -> Wednesday Easy).
     (garmin_takvimi_degisti_mi, hata_mesajı) döner; ilk değer False ise Garmin'de hiçbir
-    şey değişmemiştir ve çağıran taraf Kinetra'daki tarihi de geri almalıdır.
+    şey değişmemiştir ve çağıran taraf Kulvar'daki tarihi de geri almalıdır.
 
     Önce yeni güne eklenir, sonra eski günden kaldırılır: arada bir adım başarısız
     olursa antrenman takvimden tamamen kaybolmaz, en kötü ihtimalle iki günde birden görünür."""
@@ -347,7 +347,7 @@ def reschedule_planned_workout(payload: dict, planned: PlannedWorkout, old_date:
 
 
 def _unschedule_on(client, workout_id: int, day: dt.date) -> int:
-    """Takvim kaydının kendi ID'si Kinetra'da saklanmıyor; ay takviminden workoutId + tarih ile
+    """Takvim kaydının kendi ID'si Kulvar'da saklanmıyor; ay takviminden workoutId + tarih ile
     bulunup kaldırılır. Kaldırılan kayıt sayısını döner."""
     removed = 0
     for item in client.get_scheduled_workouts(day.year, day.month).get("calendarItems", []):

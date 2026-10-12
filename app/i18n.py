@@ -2,7 +2,7 @@
 
 Kaynak dil Türkçe: metinler kodda Türkçe yazılır, İngilizce karşılıkları locales/en.json'da
 Türkçe metin anahtarıyla durur. Çevirisi olmayan metin Türkçe görünür (uygulama bozulmaz).
-Dil profil başına saklanır (Profile.language); profil seçilmemişse kinetra_lang çerezi,
+Dil profil başına saklanır (Profile.language); profil seçilmemişse kulvar_lang çerezi,
 o da yoksa tarayıcının Accept-Language başlığı kullanılır.
 """
 from __future__ import annotations
@@ -12,7 +12,8 @@ from pathlib import Path
 
 LANGS = {"tr": "Türkçe", "en": "English"}
 DEFAULT_LANG = "tr"
-LANG_COOKIE = "kinetra_lang"
+LANG_COOKIE = "kulvar_lang"
+LEGACY_LANG_COOKIE = "kinetra_lang"
 
 _CATALOG_PATH = Path(__file__).resolve().parent / "locales" / "en.json"
 _catalog: dict[str, str] = {}

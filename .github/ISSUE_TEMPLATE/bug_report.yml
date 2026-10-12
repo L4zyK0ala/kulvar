@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. **Don't include personal data:** no real names, routes, health values, API keys, bot tokens or cookies. Security issues go through [SECURITY.md](https://github.com/L4zyK0ala/kinetra/blob/main/SECURITY.md), not here.
+        Thanks for reporting. **Don't include personal data:** no real names, routes, health values, API keys, bot tokens or cookies. Security issues go through [SECURITY.md](https://github.com/L4zyK0ala/kulvar/blob/main/SECURITY.md), not here.
   - type: textarea
     id: what
     attributes:

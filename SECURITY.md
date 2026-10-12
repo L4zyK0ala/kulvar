@@ -2,14 +2,14 @@
 
 ## Supported versions
 
-Kinetra has no versioned releases. Only the latest commit on `main` gets security fixes; please update to it before reporting.
+Kulvar has no versioned releases. Only the latest commit on `main` gets security fixes; please update to it before reporting.
 
 ## Security model
 
-Kinetra is built to run on a home network or behind a VPN. Please keep this in mind when reporting:
+Kulvar is built to run on a home network or behind a VPN. Please keep this in mind when reporting:
 
-- **No login by design.** Anyone who can reach the app can open any profile. Exposing Kinetra directly to the internet is unsupported, so "no authentication" on its own is not a vulnerability.
-- **Credentials** for Garmin, Strava, Hevy, MyFitnessPal and the Telegram bots are stored encrypted with `FITDASH_ENCRYPTION_KEY`.
+- **No login by design.** Anyone who can reach the app can open any profile. Exposing Kulvar directly to the internet is unsupported, so "no authentication" on its own is not a vulnerability.
+- **Credentials** for Garmin, Strava, Hevy, MyFitnessPal and the Telegram bots are stored encrypted with `KULVAR_ENCRYPTION_KEY`.
 - **Uploaded health documents** are stored outside the static web folder.
 
 ## In scope

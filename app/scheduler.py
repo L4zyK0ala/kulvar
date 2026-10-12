@@ -15,7 +15,7 @@ from .db import SessionLocal
 from .integrations import SYNC_FUNCS
 from .models import Credential, Profile
 
-logger = logging.getLogger("fitdash.scheduler")
+logger = logging.getLogger("kulvar.scheduler")
 
 _scheduler = BackgroundScheduler(timezone="UTC")
 

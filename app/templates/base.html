@@ -5,21 +5,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
-  <title>{% block title %}Kinetra{% endblock %}</title>
-  <link rel="icon" type="image/svg+xml" href="{{ asset('img/kinetra-mark.svg') }}" />
-  <link rel="icon" type="image/png" sizes="32x32" href="{{ asset('img/kinetra-favicon-32.png') }}" />
+  <title>{% block title %}Kulvar{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ asset('img/kulvar-mark.svg') }}" />
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ asset('img/kulvar-favicon-32.png') }}" />
   <link rel="apple-touch-icon" href="{{ asset('img/apple-touch-icon.png') }}" />
-  <meta name="apple-mobile-web-app-title" content="Kinetra" />
+  <meta name="apple-mobile-web-app-title" content="Kulvar" />
   <link rel="stylesheet" href="{{ asset('css/style.css') }}" />
-  <script src="{{ asset('js/kinetra-charts.js') }}"></script>
+  <script src="{{ asset('js/kulvar-charts.js') }}"></script>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
   {% if active_profile %}
   <nav class="topbar">
     <a class="brand" href="/dashboard?profile={{ active_profile.id }}">
-      <img class="brand-mark" src="{{ asset('img/kinetra-mark.svg') }}" alt="" />
-      Kinetra
+      <img class="brand-mark" src="{{ asset('img/kulvar-mark.svg') }}" alt="" />
+      Kulvar
     </a>
     <div class="links">
       <a href="/dashboard?profile={{ active_profile.id }}" class="{{ 'active' if request.url.path == '/dashboard' }}">{{ _('Panel') }}</a>

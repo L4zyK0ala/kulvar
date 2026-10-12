@@ -21,7 +21,7 @@ from . import i18n
 from .config import settings
 from .models import CoachMessage, HealthRecord, HealthSchedule, Profile
 
-logger = logging.getLogger("fitdash.health")
+logger = logging.getLogger("kulvar.health")
 
 DATA_DIR = Path(__file__).resolve().parent / "data" / "health"
 
@@ -114,7 +114,7 @@ def due_reminders(db: Session, profile: Profile, now: dt.datetime | None = None)
         lang = i18n.normalize(profile.language)
         label = i18n.t(lang, item["label"])
         if item["state"] == "unknown":
-            text = "🩺 " + i18n.t(lang, "{label} için son tarih kayıtlı değil. Kinetra → Koç → Sağlık'tan son tarihi girersen her {n} ayda bir hatırlatırım.",
+            text = "🩺 " + i18n.t(lang, "{label} için son tarih kayıtlı değil. Kulvar → Koç → Sağlık'tan son tarihi girersen her {n} ayda bir hatırlatırım.",
                                  label=label, n=item["interval_months"])
         elif item["state"] == "overdue":
             text = "🩺 " + i18n.t(lang, "{label} zamanı geçti ({days} gün). Son: {last}, her {n} ayda bir yapılmalı. Randevu almayı unutma; sonucu buraya gönderirsen yorumlarım.",

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros with context %}
-{% block title %}{{ _('Ayarlar') }} — Kinetra{% endblock %}
+{% block title %}{{ _('Ayarlar') }} — Kulvar{% endblock %}
 {% block content %}
 
 <div class="hero">
@@ -145,7 +145,7 @@
     </details>
     {% else %}
     <div class="metric-caption" style="line-height: 1.6; margin: 0 0 var(--space-3);">
-      {{ _('{name} için <strong>@BotFather</strong>\'da oluşturduğun botun token\'ını gir (sohbete veya koda yapıştırma). Kinetra token\'ı doğrular, bot başka bir servise (ör. Manybot) bağlıysa o bağlantıyı kaldırır ve token\'ı şifreli saklar. Grup mesajlarını okuyabilmesi için BotFather\'da <code>/setprivacy</code> → bot → <strong>Disable</strong> yapılmış olmalı.', name=active_profile.name|e)|safe }}
+      {{ _('{name} için <strong>@BotFather</strong>\'da oluşturduğun botun token\'ını gir (sohbete veya koda yapıştırma). Kulvar token\'ı doğrular, bot başka bir servise (ör. Manybot) bağlıysa o bağlantıyı kaldırır ve token\'ı şifreli saklar. Grup mesajlarını okuyabilmesi için BotFather\'da <code>/setprivacy</code> → bot → <strong>Disable</strong> yapılmış olmalı.', name=active_profile.name|e)|safe }}
       {% if telegram_shared %}<br>{{ _('Şu an .env\'deki ortak bot kullanılıyor; buraya profil botu girersen o kullanılır.') }}{% endif %}
     </div>
     <form class="inline" method="post" action="/settings/{{ active_profile.id }}/telegram/bot">

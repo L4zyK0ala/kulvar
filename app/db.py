@@ -14,7 +14,7 @@ Base = declarative_base()
 def _ensure_columns() -> None:
     """Alembic yok - SQLite'a yeni eklenen nullable kolonları ADD COLUMN ile tamamlar.
 
-    Var olan bir fitdash.db üzerinde modele yeni kolon eklendiğinde
+    Var olan bir veritabanı (kulvar.db) üzerinde modele yeni kolon eklendiğinde
     create_all() bunu farketmez (sadece eksik tabloları oluşturur);
     bu fonksiyon eksik kolonları geriye dönük olarak ekler.
     """

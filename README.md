@@ -1,11 +1,12 @@
-<p align="center"><img src="docs/logo.svg" width="96" alt="Kinetra logo"></p>
+<p align="center"><img src="docs/logo.svg" width="96" alt="Kulvar logo"></p>
 
-<h1 align="center">Kinetra</h1>
+<h1 align="center">Kulvar</h1>
 
 <p align="center">
 A self-hosted training dashboard for runners who also lift: it merges Garmin, Strava, Hevy, and MyFitnessPal data, adds an AI coach (Claude), and lets you manage your plan from Telegram.
 <br><br>
-<a href="README.tr.md">Türkçe</a> · The UI is available in English and Turkish.
+<a href="README.tr.md">Türkçe</a> · The UI is available in English and Turkish.<br>
+<em>Kulvar</em> is Turkish for <em>lane</em>: everyone in the household trains in their own lane, and the coach keeps you in yours.
 </p>
 
 <p align="center"><img src="docs/screenshots/panel.png" width="860" alt="Today panel"></p>
@@ -14,7 +15,7 @@ A self-hosted training dashboard for runners who also lift: it merges Garmin, St
 
 ## Why
 
-Garmin Connect, Strava, Hevy, and MyFitnessPal each keep a slice of your training. Kinetra pulls them into one place for a household: several profiles on one server, each with their own accounts, goals and coach. It runs on a home server behind your own network or VPN, so your data stays with you.
+Garmin Connect, Strava, Hevy, and MyFitnessPal each keep a slice of your training. Kulvar pulls them into one place for a household: several profiles on one server, each with their own accounts, goals and coach. It runs on a home server behind your own network or VPN, so your data stays with you.
 
 ## Features
 
@@ -37,7 +38,7 @@ Garmin Connect, Strava, Hevy, and MyFitnessPal each keep a slice of your trainin
 
 **Coach (Claude API, optional)**
 - Per-profile chat. The coach automatically gets a fresh summary of the profile's data with each message.
-- **Weekly target:** a weekly layout you choose (default: 3 runs including a Saturday long run, plus 2 strength sessions). Kinetra counts done, planned and missing sessions itself, and the coach fills the gaps in the rest of the week.
+- **Weekly target:** a weekly layout you choose (default: 3 runs including a Saturday long run, plus 2 strength sessions). Kulvar counts done, planned and missing sessions itself, and the coach fills the gaps in the rest of the week.
 - **Race calendar:** an A-priority race switches the coach into race mode with build, taper, race-week and recovery phases.
 - Suggested workouts can be added to the plan and pushed to your Garmin calendar with one click; an approved line replaces that day's unfinished plan.
 - Monthly budget and per-message cost tracking.
@@ -78,11 +79,11 @@ Garmin Connect, Strava, Hevy, and MyFitnessPal each keep a slice of your trainin
 No accounts needed:
 
 ```bash
-git clone https://github.com/<user>/kinetra.git && cd kinetra
+git clone https://github.com/<user>/kulvar.git && cd kulvar
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
-cp .env.example .env    # then put a key in FITDASH_ENCRYPTION_KEY (command is in the file)
-FITDASH_DATABASE_URL=sqlite:///demo.db venv/bin/python scripts/seed_demo.py --lang en
-FITDASH_DATABASE_URL=sqlite:///demo.db venv/bin/uvicorn app.main:app --port 8010
+cp .env.example .env    # then put a key in KULVAR_ENCRYPTION_KEY (command is in the file)
+KULVAR_DATABASE_URL=sqlite:///demo.db venv/bin/python scripts/seed_demo.py --lang en
+KULVAR_DATABASE_URL=sqlite:///demo.db venv/bin/uvicorn app.main:app --port 8010
 ```
 
 Then open `http://127.0.0.1:8010` and pick the **Deniz** or **Ece** profile.
@@ -99,14 +100,14 @@ Then open `http://127.0.0.1:8010` and pick the **Deniz** or **Ece** profile.
 | Strava | `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` from [strava.com/settings/api](https://www.strava.com/settings/api) | New Strava apps allow only 1 athlete; a second profile can enter its own Strava app under Settings |
 | Hevy | API key (Hevy Pro) | |
 | MyFitnessPal | A session cookie copied from your browser | Unofficial; login with username and password isn't supported. Install separately: `pip install --no-deps myfitnesspal && pip install blessed rich browser_cookie3 cloudscraper measurement lxml` |
-| Claude coach | `ANTHROPIC_API_KEY` | Optional. Set `FITDASH_COACH_MONTHLY_BUDGET_USD` as a spending cap |
+| Claude coach | `ANTHROPIC_API_KEY` | Optional. Set `KULVAR_COACH_MONTHLY_BUDGET_USD` as a spending cap |
 | Telegram | A bot from @BotFather per profile, added under Settings | Optional. Link a group with `/link CODE` |
 
-The database is SQLite; Postgres or Docker aren't needed. Credentials are stored Fernet-encrypted with `FITDASH_ENCRYPTION_KEY`.
+The database is SQLite; Postgres or Docker aren't needed. Credentials are stored Fernet-encrypted with `KULVAR_ENCRYPTION_KEY`.
 
 ## Security and privacy
 
-- **No login.** Profiles are chosen by clicking, by design. Kinetra assumes it lives on your LAN or behind a VPN (for example WireGuard). **Never expose it directly to the internet.** Bind it to `127.0.0.1` and put nginx in front.
+- **No login.** Profiles are chosen by clicking, by design. Kulvar assumes it lives on your LAN or behind a VPN (for example WireGuard). **Never expose it directly to the internet.** Bind it to `127.0.0.1` and put nginx in front.
 - **What leaves the server:**
   - Your data goes only to the services you connect: Garmin, Strava, Hevy, MyFitnessPal.
   - If you enable the coach, a summary of the profile's training, sleep and health notes goes to the Anthropic API.
@@ -116,22 +117,22 @@ The database is SQLite; Postgres or Docker aren't needed. Credentials are stored
 
 ## HTTPS on your home network
 
-[`deploy/nginx.conf`](deploy/nginx.conf) is a reverse-proxy example for a private name such as `kinetra.internal` (`.internal` is reserved for private networks).
+[`deploy/nginx.conf`](deploy/nginx.conf) is a reverse-proxy example for a private name such as `kulvar.internal` (`.internal` is reserved for private networks).
 
 iPhones reject self-signed certificates valid for more than 825 days or missing the `serverAuth` usage. The reliable way is a small private CA, limited to `.internal` names:
 
 ```bash
-openssl req -x509 -newkey rsa:4096 -nodes -keyout ca.key -out kinetra-ca.crt -days 3650 -subj "/CN=Home CA" \
+openssl req -x509 -newkey rsa:4096 -nodes -keyout ca.key -out kulvar-ca.crt -days 3650 -subj "/CN=Home CA" \
   -addext "basicConstraints=critical,CA:TRUE,pathlen:0" -addext "keyUsage=critical,keyCertSign,cRLSign" \
   -addext "nameConstraints=critical,permitted;DNS:internal"
-openssl req -newkey rsa:2048 -nodes -keyout kinetra.key -out kinetra.csr -subj "/CN=kinetra.internal"
-printf "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:kinetra.internal\n" > leaf.cnf
-openssl x509 -req -in kinetra.csr -CA kinetra-ca.crt -CAkey ca.key -CAcreateserial -days 730 -sha256 -extfile leaf.cnf -out kinetra.crt
+openssl req -newkey rsa:2048 -nodes -keyout kulvar.key -out kulvar.csr -subj "/CN=kulvar.internal"
+printf "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:kulvar.internal\n" > leaf.cnf
+openssl x509 -req -in kulvar.csr -CA kulvar-ca.crt -CAkey ca.key -CAcreateserial -days 730 -sha256 -extfile leaf.cnf -out kulvar.crt
 ```
 
 Then:
-1. Put `kinetra.crt` and `kinetra.key` into nginx.
-2. Install `kinetra-ca.crt` on each phone in Safari.
+1. Put `kulvar.crt` and `kulvar.key` into nginx.
+2. Install `kulvar-ca.crt` on each phone in Safari.
 3. On iPhone, turn it on under Settings → General → About → Certificate Trust Settings.
 4. Keep `ca.key` private. Because of the name constraint, it can only sign `.internal` names.
 
@@ -155,7 +156,7 @@ deploy/                                    nginx and systemd examples
 ## Limitations
 
 - The Garmin Connect and MyFitnessPal integrations use unofficial libraries and can break when those services change. Check their terms before you use them.
-- Kinetra is a personal project, not medical advice. The coach's suggestions don't replace a doctor or a qualified coach.
+- Kulvar is a personal project, not medical advice. The coach's suggestions don't replace a doctor or a qualified coach.
 
 ## License
 

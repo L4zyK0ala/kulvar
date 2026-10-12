@@ -1,4 +1,4 @@
-"""Kinetra Koç sohbeti — Claude API.
+"""Kulvar Koç sohbeti — Claude API.
 
 Her profilin sohbeti, talimatları, verisi ve maliyeti ayrıdır: bir profilin isteğine sadece o
 profilin özeti eklenir. Geçmiş sadece sona eklenir (append-only), çünkü Claude Opus 5.5'in düşünme
@@ -23,7 +23,7 @@ from . import i18n
 from .config import settings
 from .models import CoachMessage, CoachThread, Profile
 
-logger = logging.getLogger("fitdash.coach_chat")
+logger = logging.getLogger("kulvar.coach_chat")
 
 # $ / 1M token (Anthropic 1. parti API fiyatları). Fallback hedefleri: Claude Opus 5, Claude Opus 4.8.
 # Önbelleğe yazma 5 dakikalık TTL için girdi fiyatının 1.25 katı.
@@ -35,20 +35,20 @@ _PRICES = {
     "claude-sonnet-5": {"input": 2.00, "output": 10.00, "cache_read": 0.20, "cache_write": 2.50},
 }
 
-_BASE_SYSTEM = """Sen Kinetra'daki kişisel koşu ve kuvvet antrenmanı koçusun. Bu sohbette sadece {name} ile konuşuyorsun ve sadece {name}'in verisini görüyorsun; başka bir kişinin verisine erişimin yok, varmış gibi davranma.
+_BASE_SYSTEM = """Sen Kulvar'daki kişisel koşu ve kuvvet antrenmanı koçusun. Bu sohbette sadece {name} ile konuşuyorsun ve sadece {name}'in verisini görüyorsun; başka bir kişinin verisine erişimin yok, varmış gibi davranma.
 
-Veriler: Kinetra, Garmin, Strava, Hevy ve MyFitnessPal'dan gelen güncel özeti "Kinetra verisi" başlıklı sistem mesajlarıyla sohbete ekler (veri değiştikçe yenisi eklenir; en sonuncusu günceldir). Yorumlarını bu veriye dayandır. Veride olmayan bir şeyi uydurma; eksikse söyle. GPX türevi verilerde sıcaklık, nem ve algılanan efor yoktur. Split listesinde "kalan kısa parça" olarak işaretli son segmentin temposu ekstrapoledir, gerçek km temposu gibi yorumlama. Verideki "Sağlık Kayıtları" bölümündeki doktor notları, koç talimatlarındaki tıbbi kuralların önüne geçer; çelişki varsa doktor notunu esas al ve bunu açıkça belirt.
+Veriler: Kulvar, Garmin, Strava, Hevy ve MyFitnessPal'dan gelen güncel özeti "Kulvar verisi" başlıklı sistem mesajlarıyla sohbete ekler (veri değiştikçe yenisi eklenir; en sonuncusu günceldir). Yorumlarını bu veriye dayandır. Veride olmayan bir şeyi uydurma; eksikse söyle. GPX türevi verilerde sıcaklık, nem ve algılanan efor yoktur. Split listesinde "kalan kısa parça" olarak işaretli son segmentin temposu ekstrapoledir, gerçek km temposu gibi yorumlama. Verideki "Sağlık Kayıtları" bölümündeki doktor notları, koç talimatlarındaki tıbbi kuralların önüne geçer; çelişki varsa doktor notunu esas al ve bunu açıkça belirt.
 
 Üslup: {language}, samimi ve net yaz. Telefonda okunacağı için kısa paragraflar ve kısa madde listeleri kullan; gereksiz uzatma. Tıbbi teşhis koyma; ağrı veya sakatlık belirtilerinde bir uzmana başvurmasını öner.
 
-Haftalık hedef: Verideki "Haftalık Hedef ve Dönem" bölümü, Kinetra'nın hesapladığı hedef/gerçekleşen/kalan sayımlarıdır; sayımları kendin yeniden yapma, bu bölümü esas al.
+Haftalık hedef: Verideki "Haftalık Hedef ve Dönem" bölümü, Kulvar'ın hesapladığı hedef/gerçekleşen/kalan sayımlarıdır; sayımları kendin yeniden yapma, bu bölümü esas al.
 - Normal dönemde görevin haftayı profilin haftalık düzenindeki hedefe (varsayılan 3 koşu — biri uzun koşu günündeki uzun koşu — ve 2 kuvvet) ulaştırmaktır. Her öneride önce bu haftanın eksiğine bak.
 - Bir antrenman kaçtıysa veya yapılmadı olarak bildirildiyse, haftanın kalan günlerine yeniden yerleştir. Telafi için iki antrenmanı birleştirme, mesafe/yükü büyütme, aynı güne uzun koşu ve kuvvet koyma; uzun koşudan önceki gün ağır bacak kuvveti verme. Art arda iki kolay koşu gerekiyorsa olabilir, art arda iki zor gün olmaz.
 - Hafta kalan günlerle tamamlanamıyorsa zorlamadan şu öncelikle seç: uzun koşu > diğer koşular > kuvvet (koç talimatlarında farklı bir öncelik yazıyorsa onu uygula) ve eksiği açıkça söyle; sonraki haftaya yük taşıma.
 - Hastalık, ağrı, kötü uyku/toparlanma işaretleri, koç talimatlarındaki kısıtlar (nabız tavanı vb.) ve doktor notları her zaman haftalık hedefin önündedir.
 - Yarış dönemi: Bölümde "YARIŞ DÖNEMİ" yazıyorsa antrenman yapısını yarışın mesafesine, hedefine ve fazına göre kur (hazırlık bloğunda kademeli uzun koşu ve uygunsa kalite antrenmanı, taper'da hacmi azaltıp yoğunluğu koruma, yarış haftasında hafif açma, toparlanmada kolay hareket). Bu dönemde haftalık düzen yön göstericidir; koşu/kuvvet sayısını faza göre değiştirebilirsin, nedenini kısaca söyle. B önceliği yarış normal haftanın içinde 2-3 günlük hafif dönemle, C önceliği antrenman koşusu olarak ele alınır.
 
-Antrenman önerisi: Antrenman önerdiğinde, cevabının sonuna Kinetra'nın plana ekleyebilmesi için her antrenman için tam olarak şu formatta bir satır yaz (alanları "|" ile ayır, tarih YYYY-AA-GG):
+Antrenman önerisi: Antrenman önerdiğinde, cevabının sonuna Kulvar'ın plana ekleyebilmesi için her antrenman için tam olarak şu formatta bir satır yaz (alanları "|" ile ayır, tarih YYYY-AA-GG):
 TARIH | TIP | BAŞLIK | MESAFE_KM | SURE_DK | NOT
 - TIP: running, cycling, walking, swimming, strength veya other
 - BAŞLIK kısa ve İngilizce, "[Weekday] [Intensity]" kalıbında (ör. Wednesday Tempo, Saturday Long, Tuesday Strength); gün adı tarihe karşılık gelmeli; uzun koşu başlığında "Long" geçsin
@@ -219,7 +219,7 @@ def _stream_reply_locked(db, profile, thread, user_content, snapshot, display_te
         return
     spent = month_cost(db)
     if spent >= settings.coach_monthly_budget_usd:
-        yield {"t": "error", "message": i18n.t(lang, "Bu ayki Koç bütçesi doldu (${spent} / ${budget}). Bütçeyi .env'de FITDASH_COACH_MONTHLY_BUDGET_USD ile artırabilirsin.",
+        yield {"t": "error", "message": i18n.t(lang, "Bu ayki Koç bütçesi doldu (${spent} / ${budget}). Bütçeyi .env'de KULVAR_COACH_MONTHLY_BUDGET_USD ile artırabilirsin.",
                                                 spent=f"{spent:.2f}", budget=f"{settings.coach_monthly_budget_usd:.2f}")}
         return
 
@@ -236,8 +236,8 @@ def _stream_reply_locked(db, profile, thread, user_content, snapshot, display_te
         stamp = dt.datetime.now().strftime("%d.%m.%Y %H:%M")
         new_turn.append({
             "role": "system",
-            "content": f"Kinetra verisi ({stamp} itibarıyla güncel):\n\n{snapshot}",
-            "_display": "📊 Güncel Kinetra verileri koça iletildi",
+            "content": f"Kulvar verisi ({stamp} itibarıyla güncel):\n\n{snapshot}",
+            "_display": "📊 Güncel Kulvar verileri koça iletildi",
         })
     request_messages = history + [{"role": m["role"], "content": m["content"]} for m in new_turn]
 

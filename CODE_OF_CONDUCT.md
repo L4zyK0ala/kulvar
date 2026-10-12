@@ -36,7 +36,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement through the private report form at <https://github.com/L4zyK0ala/kinetra/security/advisories/new> (start the title with "Code of Conduct"), or to GitHub with the "Report content" option on any comment. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement through the private report form at <https://github.com/L4zyK0ala/kulvar/security/advisories/new> (start the title with "Code of Conduct"), or to GitHub with the "Report content" option on any comment. All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 

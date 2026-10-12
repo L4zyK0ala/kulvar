@@ -18,7 +18,7 @@ from .config import settings
 from .db import SessionLocal
 from .models import Activity, PlannedWorkout, Profile
 
-logger = logging.getLogger("fitdash.daily_check")
+logger = logging.getLogger("kulvar.daily_check")
 
 
 def run_evening_check() -> None:

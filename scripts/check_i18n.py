@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "app"
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("FITDASH_ENCRYPTION_KEY", "x" * 43 + "=")  # sadece import için; anahtar kullanılmaz
+os.environ.setdefault("KULVAR_ENCRYPTION_KEY", "x" * 43 + "=")  # sadece import için; anahtar kullanılmaz
 
 keys: dict[str, str] = {}
 
@@ -73,11 +73,11 @@ for title, _unit, fields in measurements._CHART_GROUPS:
         if name:
             add(name, "measurements")
 for text in ("Boy", "Dinlenik nabız", "Body Battery (zirve)", "Stres", "değişim yok", "İyi geceler", "Günaydın",
-             "İyi günler", "İyi akşamlar", "Bugün", "Yarın", "📊 Güncel Kinetra verileri koça iletildi",
+             "İyi günler", "İyi akşamlar", "Bugün", "Yarın", "📊 Güncel Kulvar verileri koça iletildi",
              "🌙 Akşam kontrolü", "🗓️ Haftalık plan", "Bağlandı, ilk senkronizasyon bekleniyor.", "Profil bulunamadı.",
              "Desteklenmeyen dosya türü. PDF veya fotoğraf (JPEG/PNG) gönder.", "Dosya çok büyük (maks. 20 MB).",
              "Desteklenmeyen dosya türü. JPEG, PNG, WEBP veya GIF yükle.", "Dosya çok büyük (maks. 8 MB).", "Boş dosya.",
-             "Kinetra'da taşındı ama Garmin bağlı olmadığı için Garmin takvimi güncellenemedi."):
+             "Kulvar'da taşındı ama Garmin bağlı olmadığı için Garmin takvimi güncellenemedi."):
     add(text, "extra")
 
 catalog = json.loads((APP / "locales" / "en.json").read_text(encoding="utf-8"))

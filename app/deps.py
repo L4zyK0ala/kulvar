@@ -6,13 +6,14 @@ from sqlalchemy.orm import Session
 from .db import get_db
 from .models import Profile
 
-COOKIE_NAME = "fitdash_profile"
+COOKIE_NAME = "kulvar_profile"
+LEGACY_COOKIE_NAME = "fitdash_profile"  # eski ad: main.migrate_cookies yeni ada taşır
 
 
 def get_current_profile(
-    fitdash_profile: str | None = Cookie(default=None, alias=COOKIE_NAME),
+    profile_id: str | None = Cookie(default=None, alias=COOKIE_NAME),
     db: Session = Depends(get_db),
 ) -> Profile | None:
-    if not fitdash_profile:
+    if not profile_id:
         return None
-    return db.get(Profile, fitdash_profile)
+    return db.get(Profile, profile_id)

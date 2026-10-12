@@ -10,7 +10,7 @@ from ..config import settings
 from ..models import Credential, NutritionLog, Profile
 from . import SyncResult, register_connect, register_sync
 
-logger = logging.getLogger("fitdash.myfitnesspal")
+logger = logging.getLogger("kulvar.myfitnesspal")
 
 # myfitnesspal 2.x kullanıcı adı/şifre ile girişi kaldırdı; sadece tarayıcıdan
 # kopyalanan bir çerezle (cookiejar) veya yerel tarayıcı çerezleriyle çalışıyor.

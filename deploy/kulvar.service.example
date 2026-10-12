@@ -1,0 +1,18 @@
+# /etc/systemd/system/kulvar.service — KULLANICI ve /opt/kulvar yollarını kendine göre değiştir.
+[Unit]
+Description=Kulvar
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=KULLANICI
+WorkingDirectory=/opt/kulvar
+EnvironmentFile=/opt/kulvar/.env
+ExecStart=/opt/kulvar/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010
+Restart=on-failure
+RestartSec=10
+SyslogIdentifier=kulvar
+
+[Install]
+WantedBy=multi-user.target

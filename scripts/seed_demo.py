@@ -1,11 +1,11 @@
-"""Kinetra'yı hesap bağlamadan denemek için kurgusal demo verisi üretir.
+"""Kulvar'ı hesap bağlamadan denemek için kurgusal demo verisi üretir.
 
 İki hayali profil (Deniz, Ece) için son ~4 ayın koşu/kuvvet antrenmanlarını, günlük metrikleri,
 beslenme kayıtlarını, vücut ölçümlerini, planlı antrenmanları, bir hedef yarışı ve örnek bir koç
 sohbetini oluşturur. Hiçbir gerçek kişiye ait veri içermez; GPS rotası sentetik bir döngüdür.
 
 Kullanım (boş bir veritabanıyla; --lang en profilleri ve örnek metinleri İngilizce yapar):
-    FITDASH_DATABASE_URL=sqlite:///demo.db python scripts/seed_demo.py [--lang en]
+    KULVAR_DATABASE_URL=sqlite:///demo.db python scripts/seed_demo.py [--lang en]
 """
 from __future__ import annotations
 
@@ -18,10 +18,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-if not os.environ.get("FITDASH_ENCRYPTION_KEY"):
+if not os.environ.get("KULVAR_ENCRYPTION_KEY"):
     from cryptography.fernet import Fernet
 
-    os.environ["FITDASH_ENCRYPTION_KEY"] = Fernet.generate_key().decode()  # demo'da kimlik bilgisi saklanmaz
+    os.environ["KULVAR_ENCRYPTION_KEY"] = Fernet.generate_key().decode()  # demo'da kimlik bilgisi saklanmaz
 
 from app.db import SessionLocal, init_db  # noqa: E402
 from app.models import (  # noqa: E402

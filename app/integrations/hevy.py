@@ -12,7 +12,7 @@ from ..config import settings
 from ..models import Activity, BodyMeasurement, Credential, Profile
 from . import SyncResult, register_connect, register_sync
 
-logger = logging.getLogger("fitdash.hevy")
+logger = logging.getLogger("kulvar.hevy")
 
 BASE_URL = "https://api.hevyapp.com/v1"
 PAGE_SIZE = 10

@@ -27,7 +27,7 @@ class Profile(Base):
     # Strava yeni uygulamalara 1 bağlı sporcu kapasitesi veriyor; ikinci kişi .env'deki ortak
     # uygulamaya bağlanamadığı için kendi uygulamasını oluşturup burada kullanabiliyor.
     strava_app_encrypted = Column(Text, nullable=True)
-    coach_instructions = Column(Text, nullable=True)  # Kinetra Koç sohbeti için profile özel talimatlar
+    coach_instructions = Column(Text, nullable=True)  # Kulvar Koç sohbeti için profile özel talimatlar
     telegram_chat_id = Column(String, nullable=True)  # bu profile bağlı Telegram grubu
     telegram_link_code = Column(String, nullable=True)  # grupta /bagla KOD ile eşleştirme
     telegram_bot_encrypted = Column(Text, nullable=True)  # profilin kendi botu: şifreli {token, username}
@@ -222,7 +222,7 @@ class PlannedWorkout(Base):
 
 
 class CoachThread(Base):
-    """Bir profilin Kinetra Koç sohbeti (Claude API). Her profilin sohbetleri ayrıdır."""
+    """Bir profilin Kulvar Koç sohbeti (Claude API). Her profilin sohbetleri ayrıdır."""
 
     __tablename__ = "coach_threads"
 

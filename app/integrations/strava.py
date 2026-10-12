@@ -14,7 +14,7 @@ from ..crypto import encrypt_payload
 from ..models import Activity, ActivityStream, Credential, Profile
 from . import SyncResult, register_sync
 
-logger = logging.getLogger("fitdash.strava")
+logger = logging.getLogger("kulvar.strava")
 
 CALLBACK_PATH = "/settings/strava/callback"
 

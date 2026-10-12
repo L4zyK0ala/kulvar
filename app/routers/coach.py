@@ -235,7 +235,7 @@ def _build_brief_markdown(
     health_lines: list[str] | None = None,
     include_prompt: bool = True,
 ) -> str:
-    lines: list[str] = [f"# Kinetra Antrenman Özeti — {profile.name} — {today.strftime('%d.%m.%Y')}", ""]
+    lines: list[str] = [f"# Kulvar Antrenman Özeti — {profile.name} — {today.strftime('%d.%m.%Y')}", ""]
 
     if profile.gender or profile.height_cm:
         bits = []
@@ -264,7 +264,7 @@ def _build_brief_markdown(
         lines.append("")
 
     if upcoming:
-        lines.append("## Planlı Antrenmanlar (Kinetra Koç)")
+        lines.append("## Planlı Antrenmanlar (Kulvar Koç)")
         for w in upcoming:
             bits = [w.date.strftime("%d.%m.%Y"), w.title, WORKOUT_TYPE_LABELS.get(w.workout_type, w.workout_type)]
             if w.target_distance_m:
@@ -388,8 +388,8 @@ def _build_brief_markdown(
     lines.append("2026-08-16 | running | Sunday Tempo | 8 |  | rahat tempo, negatif split")
     lines.append("")
     lines.append(
-        "Cevabının tamamını (yorum + plan satırı) kopyalayıp Kinetra'daki Koç sayfasına "
-        "yapıştıracağım; Kinetra sadece TARIH ile başlayan satırları otomatik olarak okuyup "
+        "Cevabının tamamını (yorum + plan satırı) kopyalayıp Kulvar'daki Koç sayfasına "
+        "yapıştıracağım; Kulvar sadece TARIH ile başlayan satırları otomatik olarak okuyup "
         "plana ekleyecek, yorum kısmı görmezden gelinecek."
     )
 
@@ -397,7 +397,7 @@ def _build_brief_markdown(
 
 
 def build_profile_brief(db: Session, profile: Profile, include_prompt: bool = True) -> str:
-    """Bir profilin Koç özetini üretir: Claude.ai'ye kopyalanan metin ve Kinetra Koç sohbetine
+    """Bir profilin Koç özetini üretir: Claude.ai'ye kopyalanan metin ve Kulvar Koç sohbetine
     otomatik eklenen veri aynı fonksiyondan gelir. Sadece o profilin verisi kullanılır."""
     # Aktivite saatleri yerel saatle saklanıyor; pencere de yerel saatle hesaplanmalı (UTC 3 saat kaydırıyordu).
     now = dt.datetime.now()
@@ -678,7 +678,7 @@ def active_plans(db: Session, profile_id: str):
 
 def move_planned_workout(db: Session, workout: PlannedWorkout, target: dt.date) -> None:
     """Antrenmanı yeni güne taşır (başlıktaki gün adı ve Garmin takvimi dahil). Garmin'de hiçbir
-    şey değişmediyse Kinetra'da da eski tarihte kalır; sonuç workout.garmin_error'da."""
+    şey değişmediyse Kulvar'da da eski tarihte kalır; sonuç workout.garmin_error'da."""
     old_date = workout.date
     workout.date = target
     workout.title = _retitle_for_date(workout.title, target)
@@ -690,12 +690,12 @@ def move_planned_workout(db: Session, workout: PlannedWorkout, target: dt.date) 
             .first()
         )
         if credential is None:
-            workout.garmin_error = "Kinetra'da taşındı ama Garmin bağlı olmadığı için Garmin takvimi güncellenemedi."
+            workout.garmin_error = "Kulvar'da taşındı ama Garmin bağlı olmadığı için Garmin takvimi güncellenemedi."
         else:
             payload = decrypt_payload(credential.encrypted_payload)
             moved, error = garmin_integration.reschedule_planned_workout(payload, workout, old_date)
             if not moved:
-                # Garmin'de hiçbir şey değişmedi: Kinetra da eski tarihte kalsın ki tekrar denenebilsin.
+                # Garmin'de hiçbir şey değişmedi: Kulvar da eski tarihte kalsın ki tekrar denenebilsin.
                 workout.date = old_date
                 workout.title = _retitle_for_date(workout.title, old_date)
             workout.garmin_error = error

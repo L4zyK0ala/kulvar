@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Kinetra Design System — tokens
+   Kulvar Design System — tokens
    ========================================================================== */
 
 :root {
@@ -11,7 +11,7 @@
   --border: #e3e9f2;
   --border-strong: #cbd6e6;
 
-  /* Brand / accent — taken from the Kinetra mark (blue → cyan) */
+  /* Brand / accent — taken from the Kulvar mark (blue → cyan) */
   --primary: #2f6fed;
   --primary-strong: #1d4fd1;
   --primary-dim: rgba(47, 111, 237, 0.10);

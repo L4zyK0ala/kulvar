@@ -1,8 +1,8 @@
-"""Kinetra Telegram botları: her profilin kendi botu ve grubu.
+"""Kulvar Telegram botları: her profilin kendi botu ve grubu.
 
 Her profilin bot token'ı Ayarlar → Telegram'dan girilir ve şifreli saklanır (eski kurulumlar
 için .env'deki TELEGRAM_BOT_TOKEN ortak bot olarak da çalışır). Uzun yoklama (getUpdates)
-kullanılır: sunucu Telegram'a kendisi bağlandığı için Kinetra'nın internete açılması gerekmez.
+kullanılır: sunucu Telegram'a kendisi bağlandığı için Kulvar'ın internete açılması gerekmez.
 Bir grup /bagla KOD ile bağlanır; bir profilin botu sadece o profili bağlayabilir ve sadece o
 profilin grubuna cevap verir.
 """
@@ -26,7 +26,7 @@ from .crypto import decrypt_payload, encrypt_payload
 from .db import SessionLocal
 from .models import Credential, HealthRecord, PlannedWorkout, PlanSuggestion, Profile
 
-logger = logging.getLogger("fitdash.telegram")
+logger = logging.getLogger("kulvar.telegram")
 
 _MAX_TEXT = 3900  # Telegram sınırı 4096; HTML etiketleri için pay
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="telegram")
@@ -98,7 +98,7 @@ def save_profile_bot(db, profile: Profile, token: str, lang: str = "tr") -> str:
     if info.get("url"):
         from urllib.parse import urlparse
         api("deleteWebhook", token)
-        notes.append(i18n.t(lang, "Botun {host} webhook'u kaldırıldı; mesajlar artık Kinetra'ya geliyor.", host=urlparse(info["url"]).hostname))
+        notes.append(i18n.t(lang, "Botun {host} webhook'u kaldırıldı; mesajlar artık Kulvar'a geliyor.", host=urlparse(info["url"]).hostname))
     if profile_bot(profile) and profile_bot(profile)["token"] != token:
         profile.telegram_chat_id = None  # farklı bot: grup yeniden /bagla ile bağlanmalı
     profile.telegram_bot_encrypted = encrypt_payload({"token": token, "username": me["username"]})
@@ -340,8 +340,8 @@ def record_doctor_note(db, profile: Profile, note: str, source: str, record_date
 WORKOUT_TYPE_LABELS_TR = {"running": "koşu", "cycling": "bisiklet", "walking": "yürüyüş", "swimming": "yüzme", "strength": "kuvvet", "other": "diğer"}
 
 
-_HELP = """**Kinetra Koç** — bu grup {name} profiline bağlı.
-• Mesaj yaz: koça gider, cevap buraya gelir (Kinetra'daki sohbetle aynı geçmiş).
+_HELP = """**Kulvar Koç** — bu grup {name} profiline bağlı.
+• Mesaj yaz: koça gider, cevap buraya gelir (Kulvar'daki sohbetle aynı geçmiş).
 • Tahlil/rapor PDF'i veya fotoğrafı gönder: türünü seçince Claude yorumlar.
 • /doktor <not> — doktorun söylediklerini kaydet, koç planı buna göre günceller.
 • /plan — planlı antrenmanlar (✅ Yapıldı / ❌ Yapılmadı / 📅 Yarına taşı)
@@ -378,7 +378,7 @@ def _handle_message(msg: dict, token: str) -> None:
             code = parts[1].strip() if len(parts) > 1 else ""
             profile = next((p for p in allowed if code and p.telegram_link_code == code), None)
             if profile is None:
-                api("sendMessage", token, chat_id=chat_id, text="Kod geçersiz. Kinetra → Ayarlar → Telegram'dan yeni kod al. / Invalid code. Get a new one in Kinetra → Settings → Telegram.")
+                api("sendMessage", token, chat_id=chat_id, text="Kod geçersiz. Kulvar → Ayarlar → Telegram'dan yeni kod al. / Invalid code. Get a new one in Kulvar → Settings → Telegram.")
                 return
             profile.telegram_chat_id = chat_id
             profile.telegram_link_code = None

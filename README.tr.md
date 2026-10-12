@@ -1,11 +1,12 @@
-<p align="center"><img src="docs/logo.svg" width="96" alt="Kinetra logosu"></p>
+<p align="center"><img src="docs/logo.svg" width="96" alt="Kulvar logosu"></p>
 
-<h1 align="center">Kinetra</h1>
+<h1 align="center">Kulvar</h1>
 
 <p align="center">
 Hem koşan hem salona giden sporcular için kendi sunucunda çalışan bir antrenman paneli. Garmin, Strava, Hevy ve MyFitnessPal verilerini birleştirir, Claude ile çalışan bir koç ekler ve planını Telegram'dan yönetmeni sağlar.
 <br><br>
-<a href="README.md">English</a> · Arayüz Türkçe ve İngilizce.
+<a href="README.md">English</a> · Arayüz Türkçe ve İngilizce.<br>
+Hanedeki herkes kendi kulvarında antrenman yapar; koç seni kendi kulvarında tutar.
 </p>
 
 <p align="center"><img src="docs/screenshots/tr/panel.png" width="860" alt="Bugün paneli"></p>
@@ -14,7 +15,7 @@ Hem koşan hem salona giden sporcular için kendi sunucunda çalışan bir antre
 
 ## Neden
 
-Saat, koşu uygulaması, salon kaydı ve beslenme günlüğü antrenmanının ayrı birer parçasını tutar. Kinetra bunları bir hane için tek yerde toplar: bir sunucuda birden fazla profil, her birinin kendi hesapları, hedefleri ve koçu. Ev ağında ya da VPN arkasında çalışır; veriler sende kalır.
+Saat, koşu uygulaması, salon kaydı ve beslenme günlüğü antrenmanının ayrı birer parçasını tutar. Kulvar bunları bir hane için tek yerde toplar: bir sunucuda birden fazla profil, her birinin kendi hesapları, hedefleri ve koçu. Ev ağında ya da VPN arkasında çalışır; veriler sende kalır.
 
 ## Özellikler
 
@@ -37,7 +38,7 @@ Saat, koşu uygulaması, salon kaydı ve beslenme günlüğü antrenmanının ay
 
 **Koç (Claude API, isteğe bağlı)**
 - Profil başına sohbet. Koç, her mesajda profilin güncel veri özetini otomatik olarak alır.
-- **Haftalık hedef:** seçtiğin haftalık düzen (varsayılan: biri Cumartesi uzun koşu olmak üzere 3 koşu + 2 kuvvet). Yapılan, planlanan ve eksik antrenmanları Kinetra kendisi sayar; koç eksikleri haftanın kalan günlerine yerleştirir.
+- **Haftalık hedef:** seçtiğin haftalık düzen (varsayılan: biri Cumartesi uzun koşu olmak üzere 3 koşu + 2 kuvvet). Yapılan, planlanan ve eksik antrenmanları Kulvar kendisi sayar; koç eksikleri haftanın kalan günlerine yerleştirir.
 - **Yarış takvimi:** A öncelikli bir yarış, koçu hazırlık, taper, yarış haftası ve toparlanma fazlarıyla yarış dönemine geçirir.
 - Önerilen antrenmanlar tek tıkla plana eklenir ve Garmin takvimine gönderilir; onaylanan satır o günün yapılmamış planının yerine geçer.
 - Aylık bütçe ve mesaj başına maliyet takibi.
@@ -78,11 +79,11 @@ Saat, koşu uygulaması, salon kaydı ve beslenme günlüğü antrenmanının ay
 Hesap bağlamak gerekmez:
 
 ```bash
-git clone https://github.com/<kullanici>/kinetra.git && cd kinetra
+git clone https://github.com/<kullanici>/kulvar.git && cd kulvar
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
-cp .env.example .env    # FITDASH_ENCRYPTION_KEY'e anahtar yaz (komut dosyada)
-FITDASH_DATABASE_URL=sqlite:///demo.db venv/bin/python scripts/seed_demo.py
-FITDASH_DATABASE_URL=sqlite:///demo.db venv/bin/uvicorn app.main:app --port 8010
+cp .env.example .env    # KULVAR_ENCRYPTION_KEY'e anahtar yaz (komut dosyada)
+KULVAR_DATABASE_URL=sqlite:///demo.db venv/bin/python scripts/seed_demo.py
+KULVAR_DATABASE_URL=sqlite:///demo.db venv/bin/uvicorn app.main:app --port 8010
 ```
 
 Ardından `http://127.0.0.1:8010` adresini aç ve **Deniz** ya da **Ece** profilini seç.
@@ -99,14 +100,14 @@ Ardından `http://127.0.0.1:8010` adresini aç ve **Deniz** ya da **Ece** profil
 | Strava | [strava.com/settings/api](https://www.strava.com/settings/api) üzerinden `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` | Yeni Strava uygulamaları 1 sporcuyla sınırlı; ikinci profil kendi Strava uygulamasını Ayarlar'dan girebilir |
 | Hevy | API anahtarı (Hevy Pro) | |
 | MyFitnessPal | Tarayıcından kopyalanan oturum çerezi | Resmi değil; kullanıcı adı ve şifreyle giriş desteklenmiyor. Ayrı kurulur: `pip install --no-deps myfitnesspal && pip install blessed rich browser_cookie3 cloudscraper measurement lxml` |
-| Claude koç | `ANTHROPIC_API_KEY` | İsteğe bağlı. Harcama sınırı için `FITDASH_COACH_MONTHLY_BUDGET_USD` |
+| Claude koç | `ANTHROPIC_API_KEY` | İsteğe bağlı. Harcama sınırı için `KULVAR_COACH_MONTHLY_BUDGET_USD` |
 | Telegram | Her profil için @BotFather'dan bir bot, Ayarlar'dan eklenir | İsteğe bağlı. Grubu `/bagla KOD` ile bağla |
 
-Veritabanı SQLite'tır; Postgres ya da Docker gerekmez. Kimlik bilgileri `FITDASH_ENCRYPTION_KEY` ile Fernet şifreli saklanır.
+Veritabanı SQLite'tır; Postgres ya da Docker gerekmez. Kimlik bilgileri `KULVAR_ENCRYPTION_KEY` ile Fernet şifreli saklanır.
 
 ## Güvenlik ve gizlilik
 
-- **Giriş ekranı yok.** Profiller tıklanarak seçilir; bu bilinçli bir tercih. Kinetra'nın ev ağında ya da bir VPN (örn. WireGuard) arkasında çalıştığı varsayılır. **Uygulamayı asla doğrudan internete açma.** `127.0.0.1`'e bağla ve önüne nginx koy.
+- **Giriş ekranı yok.** Profiller tıklanarak seçilir; bu bilinçli bir tercih. Kulvar'ın ev ağında ya da bir VPN (örn. WireGuard) arkasında çalıştığı varsayılır. **Uygulamayı asla doğrudan internete açma.** `127.0.0.1`'e bağla ve önüne nginx koy.
 - **Sunucudan dışarı ne çıkar:**
   - Verilerin yalnızca bağladığın servislere gider: Garmin, Strava, Hevy, MyFitnessPal.
   - Koçu açarsan profilin antrenman, uyku ve sağlık notları özeti Anthropic API'ye gider.
@@ -116,13 +117,13 @@ Veritabanı SQLite'tır; Postgres ya da Docker gerekmez. Kimlik bilgileri `FITDA
 
 ## Ev ağında HTTPS
 
-[`deploy/nginx.conf`](deploy/nginx.conf), `kinetra.internal` gibi özel bir ad için ters vekil (reverse proxy) örneğidir (`.internal` özel ağlar için ayrılmıştır).
+[`deploy/nginx.conf`](deploy/nginx.conf), `kulvar.internal` gibi özel bir ad için ters vekil (reverse proxy) örneğidir (`.internal` özel ağlar için ayrılmıştır).
 
 iPhone'lar 825 günden uzun geçerli olan veya `serverAuth` kullanımı olmayan self-signed sertifikaları reddeder. Güvenilir yol, yalnızca `.internal` adlarıyla sınırlı küçük bir özel CA'dır. Komutlar [İngilizce README](README.md#https-on-your-home-network) içinde.
 
 Sonra:
-1. `kinetra.crt` ve `kinetra.key` dosyalarını nginx'e koy.
-2. `kinetra-ca.crt` dosyasını her telefona Safari ile yükle.
+1. `kulvar.crt` ve `kulvar.key` dosyalarını nginx'e koy.
+2. `kulvar-ca.crt` dosyasını her telefona Safari ile yükle.
 3. iPhone'da Ayarlar → Genel → Hakkında → Sertifika Güven Ayarları altından aç.
 4. `ca.key` dosyasını gizli tut. Ad kısıtı sayesinde yalnızca `.internal` adları için sertifika imzalayabilir.
 
@@ -146,7 +147,7 @@ deploy/                                    nginx ve systemd örnekleri
 ## Sınırlamalar
 
 - Garmin Connect ve MyFitnessPal entegrasyonları resmi olmayan kütüphaneler kullanır; bu servisler değiştiğinde bozulabilir. Kullanmadan önce kullanım koşullarına bak.
-- Kinetra kişisel bir projedir, tıbbi tavsiye değildir. Koçun önerileri bir doktorun ya da yetkin bir antrenörün yerini tutmaz.
+- Kulvar kişisel bir projedir, tıbbi tavsiye değildir. Koçun önerileri bir doktorun ya da yetkin bir antrenörün yerini tutmaz.
 
 ## Lisans
 

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros with context %}
-{% block title %}{{ _('Koç') }} — Kinetra{% endblock %}
+{% block title %}{{ _('Koç') }} — Kulvar{% endblock %}
 {% block content %}
 
 <div class="hero">
@@ -67,7 +67,7 @@
     </table>
   </div>
   <div class="metric-caption" style="margin-top: 8px;">
-    {{ _('Model: {model}. Tutarlar token sayılarından hesaplanan tahmindir; kesin fatura Anthropic Console\'dadır. Aylık bütçe sınırı .env\'de <code>FITDASH_COACH_MONTHLY_BUDGET_USD</code> ile değiştirilebilir.', model=chat_usage.model|e)|safe }}
+    {{ _('Model: {model}. Tutarlar token sayılarından hesaplanan tahmindir; kesin fatura Anthropic Console\'dadır. Aylık bütçe sınırı .env\'de <code>KULVAR_COACH_MONTHLY_BUDGET_USD</code> ile değiştirilebilir.', model=chat_usage.model|e)|safe }}
   </div>
 </details>
 
@@ -382,7 +382,7 @@ const I18N = {{ {
   'plan_button': _('📅 Plana ekle ve Garmin\'e gönder'),
   'channel_telegram': 'Telegram',
   'channel_auto': _('Akşam kontrolü'),
-  'welcome': _('Merhaba! Son antrenmanlarını, toparlanmanı veya sıradaki antrenmanını sorabilirsin. Koç güncel Kinetra verilerini otomatik görür.'),
+  'welcome': _('Merhaba! Son antrenmanlarını, toparlanmanı veya sıradaki antrenmanını sorabilirsin. Koç güncel Kulvar verilerini otomatik görür.'),
   'thinking': _('Koç düşünüyor…'),
   'truncated': _('(Yanıt uzunluk sınırında kesildi.)'),
   'cost_line': _('Bu mesaj: ${msg} · bu ay {name}: ${profile} · iki profil toplam ${total} / bütçe ${budget}'),
