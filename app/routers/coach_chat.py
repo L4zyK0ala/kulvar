@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
-from .. import coach_chat
+from .. import coach_chat, coach_memory
 from ..db import SessionLocal, get_db
-from ..models import Profile
+from ..models import InstructionRevision, Profile
 from .coach import build_profile_brief, extract_plan_lines
 
 router = APIRouter()
@@ -34,7 +34,8 @@ async def chat(profile_id: str, request: Request):
             snapshot = build_profile_brief(db, profile, include_prompt=False)
             for event in coach_chat.stream_reply(db, profile, thread, text, snapshot):
                 if event["t"] == "done":
-                    event["plan_lines"] = extract_plan_lines(event.pop("text"))
+                    event["display"] = event.pop("text")
+                    event["plan_lines"] = extract_plan_lines(event["display"])
                 yield json.dumps(event, ensure_ascii=False) + "\n"
         finally:
             db.close()
@@ -59,7 +60,26 @@ def new_thread(profile_id: str, db: Session = Depends(get_db)):
 def save_instructions(profile_id: str, instructions: str = Form(""), db: Session = Depends(get_db)):
     profile = db.get(Profile, profile_id)
     if profile is not None:
-        profile.coach_instructions = instructions.strip() or None
-        db.add(profile)
-        db.commit()
+        coach_memory.set_instructions(db, profile, instructions, source="user")
+    return RedirectResponse("/coach-brief#koc-talimatlari", status_code=303)
+
+
+@router.post("/coach/{profile_id}/notes")
+def save_notes(profile_id: str, notes: str = Form(""), db: Session = Depends(get_db)):
+    profile = db.get(Profile, profile_id)
+    if profile is not None:
+        coach_memory.set_notes(db, profile, notes, source="user")
+    return RedirectResponse("/coach-brief#koc-notlari", status_code=303)
+
+
+@router.post("/coach/{profile_id}/revision/{revision_id}/{action}")
+def revision_action(profile_id: str, revision_id: str, action: str, db: Session = Depends(get_db)):
+    """Talimat önerisini uygula/reddet ya da uygulanmış bir değişikliği geri al."""
+    profile = db.get(Profile, profile_id)
+    rev = db.get(InstructionRevision, revision_id)
+    if profile is not None and rev is not None and rev.profile_id == profile_id:
+        if action in ("approve", "reject"):
+            coach_memory.decide(db, profile, rev, approve=(action == "approve"))
+        elif action == "revert":
+            coach_memory.revert(db, profile, rev)
     return RedirectResponse("/coach-brief#koc-talimatlari", status_code=303)

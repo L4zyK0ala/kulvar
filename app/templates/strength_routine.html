@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros with context %}
+{% block title %}{{ routine.title }} — Kulvar{% endblock %}
+{% block content %}
+
+<form method="post" action="/strength/routines/{{ routine.id }}" class="workout-form">
+  {# Klavyede "Git": değerler kaydedilir, sayfa yenilenir (hiçbir şey silinmez, Hevy'ye gitmez). #}
+  <button type="submit" name="action" value="stay" class="visually-hidden" tabindex="-1" aria-hidden="true">{{ _('Kaydet') }}</button>
+
+  <div class="hero">
+    <div class="hero-greeting" style="width:100%;">
+      <input type="text" name="title" value="{{ routine.title }}" maxlength="120" class="routine-title" aria-label="{{ _('Rutin adı') }}" />
+      <p class="subtitle">{{ macros.source_badge('kulvar' if native else 'hevy') }}
+        {% if native %}{{ _('Kulvar\'da tutulan rutin.') }}{% else %}{{ _('Hevy\'deki rutin: kaydedince Hevy\'de de güncellenir. Hevy\'de karşılığı olmayan bir hareket eklersen rutin Kulvar\'a taşınır.') }}{% endif %}
+      </p>
+    </div>
+  </div>
+
+  {% if saved == 'hevy' %}<div class="card" style="margin-bottom: var(--space-4); border-color: var(--success);">✅ {{ _('Kaydedildi; Hevy\'de de güncellendi.') }}</div>
+  {% elif saved == 'native' %}<div class="card" style="margin-bottom: var(--space-4); border-color: var(--success);">✅ {{ _('Kaydedildi.') }}</div>
+  {% elif saved == 'detached' %}<div class="card" style="margin-bottom: var(--space-4); border-color: var(--success);">✅ {{ _('Kaydedildi. Rutin Kulvar\'a taşındı; Hevy\'deki eski kopyası artık kullanılmaz.') }}</div>
+  {% elif saved == 'error' %}<div class="card" style="margin-bottom: var(--space-4); border-color: var(--danger); color: var(--danger);">⚠️ {{ _('Kulvar\'da kaydedildi ama Hevy\'ye yazılamadı; bir süre sonra tekrar kaydet.') }}</div>{% endif %}
+
+  {% for it in items %}
+  {% set i = loop.index0 %}
+  {% set e, v = it.e, it.view %}
+  <div class="card workout-ex" id="ex-{{ i }}">
+    <div class="workout-ex-head">
+      <div class="exercise-media">
+        {% if v.frames|length >= 2 %}<img src="/static/{{ v.frames[0] }}" alt="" loading="lazy" /><img class="frame-b" src="/static/{{ v.frames[1] }}" alt="" loading="lazy" />
+        {% elif v.frames %}<img src="/static/{{ v.frames[0] }}" alt="" loading="lazy" />
+        {% elif v.thumbnail %}<img src="{{ v.thumbnail }}" alt="" loading="lazy" referrerpolicy="no-referrer" />
+        {% else %}<span class="exercise-placeholder">🏋️</span>{% endif %}
+      </div>
+      <div style="min-width:0; flex:1;">
+        <strong style="overflow-wrap:anywhere;">{{ e.title }}</strong>
+        <div class="metric-caption" style="margin:2px 0 0;">{% if v.muscle %}{{ v.muscle|replace('_', ' ') }}{% endif %}{% if v.garmin %} · ⌚{% endif %}</div>
+      </div>
+      <div class="routine-ex-tools">
+        <button type="submit" name="action" value="up:{{ i }}" class="ghost" title="{{ _('Yukarı') }}" aria-label="{{ _('Yukarı') }}" {{ 'disabled' if loop.first }}>↑</button>
+        <button type="submit" name="action" value="down:{{ i }}" class="ghost" title="{{ _('Aşağı') }}" aria-label="{{ _('Aşağı') }}" {{ 'disabled' if loop.last }}>↓</button>
+        <button type="submit" name="action" value="del_ex:{{ i }}" class="ghost" style="color: var(--danger);" title="{{ _('Hareketi çıkar') }}" aria-label="{{ _('Hareketi çıkar') }}">✕</button>
+      </div>
+    </div>
+    {% for s in e.sets %}
+    {% set j = loop.index0 %}
+    <div class="set-row">
+      <span class="set-no">{{ loop.index }}</span>
+      {% if it.timed %}
+      <label class="set-field"><input type="number" name="set_{{ i }}_{{ j }}_sec" value="{{ s.duration_seconds or '' }}" min="0" inputmode="numeric" /> <span>{{ _('sn') }}</span></label>
+      {% else %}
+      <label class="set-field"><input type="number" name="set_{{ i }}_{{ j }}_reps" value="{{ s.reps if s.reps is not none else '' }}" min="0" inputmode="numeric" /> <span>{{ _('tekrar') }}</span></label>
+      <label class="set-field"><input type="number" name="set_{{ i }}_{{ j }}_kg" value="{{ '%g'|format(s.weight_kg) if s.weight_kg else '' }}" min="0" step="0.5" inputmode="decimal" placeholder="—" /> <span>kg</span></label>
+      {% endif %}
+      <button type="submit" name="action" value="del_set:{{ i }}:{{ j }}" class="ghost set-del" title="{{ _('Seti sil') }}" aria-label="{{ _('Seti sil') }}" {{ 'disabled' if e.sets|length < 2 }}>✕</button>
+    </div>
+    {% endfor %}
+    <div class="routine-ex-foot">
+      <button type="submit" name="action" value="add_set:{{ i }}" class="secondary set-add">+ {{ _('Set ekle') }}</button>
+      <button type="submit" name="action" value="mode:{{ i }}" class="ghost set-add">{{ _('Tekrar yerine süre') if not it.timed else _('Süre yerine tekrar') }}</button>
+      <label class="set-field">{{ _('dinlenme') }} <input type="number" name="ex_{{ i }}_rest" value="{{ e.rest_seconds or '' }}" min="0" inputmode="numeric" /> {{ _('sn') }}</label>
+    </div>
+    <input type="text" name="ex_{{ i }}_notes" value="{{ e.notes or '' }}" placeholder="{{ _('Not (ör. 3 sn in, diz ayak ucu yönünde)') }}" style="width:100%; margin-top: 8px;" />
+  </div>
+  {% else %}
+  <div class="card" style="margin-bottom: var(--space-3);">{{ macros.empty_state(_('Rutinde hareket yok'), _('Aşağıdan arayıp ekle.'), icon='🏋️') }}</div>
+  {% endfor %}
+
+  <div class="card" id="ekle">
+    <div class="metric-label">{{ _('Hareket ekle') }}</div>
+    <div style="display:flex; gap:8px; margin-top: 6px;">
+      <input type="search" name="q" value="{{ q }}" placeholder="{{ _('İngilizce ara: squat, row, plank…') }}" style="flex:1; min-width:0;" />
+      <button type="submit" name="action" value="search" class="secondary">{{ _('Ara') }}</button>
+    </div>
+    {% if q and not results %}<div class="metric-caption" style="margin-top: 8px;">{{ _('Sonuç yok; başka bir kelime dene.') }}</div>{% endif %}
+    {% for r in results %}
+    <div class="set-row" style="border-top: 1px solid var(--border); padding: 8px 0;">
+      <div style="min-width:0; flex:1;">
+        <strong style="overflow-wrap:anywhere;">{{ r.title }}</strong>
+        <div class="metric-caption" style="margin:2px 0 0;">{{ (r.muscle or '')|replace('_', ' ') }}{% if r.equipment %} · {{ r.equipment }}{% endif %}{% if r.known %} · ✓ {{ _('kullanılmış') }}{% endif %}</div>
+      </div>
+      <button type="submit" name="action" value="add_ex:{{ r.key }}" class="secondary">+ {{ _('Ekle') }}</button>
+    </div>
+    {% endfor %}
+    <div class="metric-caption" style="margin-top: 8px;">{{ _('Katalog: daha önce kullandığın hareketler ve free-exercise-db (876 hareket, görselli). Eklenen hareketin animasyonu ve saatteki karşılığı otomatik bulunur.') }}</div>
+  </div>
+
+  <div class="workout-actions">
+    <button type="submit" name="action" value="save">💾 {{ _('Kaydet') }}</button>
+  </div>
+  <div class="metric-caption" style="margin-top: 6px;">{{ _('Kaydedince bu rutini kullanan ve Garmin\'e gönderilmiş gelecek kuvvet antrenmanları da güncellenir.') }}</div>
+  {% if native %}
+  <div style="margin-top: var(--space-3);">
+    <button type="submit" name="action" value="delete" class="ghost" style="color: var(--danger);"
+            data-confirm="{{ _('Bu rutin silinsin mi?') }}" onclick="return confirm(this.dataset.confirm);">{{ _('Rutini sil') }}</button>
+  </div>
+  {% endif %}
+</form>
+
+<div style="margin-top: var(--space-5);"><a href="/strength?tab=routines">← {{ _('Rutinler') }}</a></div>
+{% endblock %}

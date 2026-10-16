@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from .. import i18n
+from .. import feedback, i18n, morning
 from ..activity_display import format_duration, format_pace, group_activities, is_running
 from ..db import get_db
 from ..deps import get_current_profile
@@ -137,6 +138,10 @@ def _plan_card(db: Session, profile_id: str, today: dt.date, todays_activities: 
         meta.append(f"{upcoming.target_distance_m / 1000:.1f} km")
     if upcoming.target_duration_s:
         meta.append(f"{int(upcoming.target_duration_s // 60)} {i18n.t(lang, 'dk')}")
+    if upcoming.target_hr_max:
+        from .coach import hr_target_label
+
+        meta.append(hr_target_label(upcoming))
     return {"workout": upcoming, "when": when, "is_today": days_until == 0, "done": done, "meta": " · ".join(meta)}
 
 
@@ -235,6 +240,8 @@ def dashboard(
             "pace": format_pace(a.distance_m, a.duration_s) if is_running(a.source, a.activity_type) else None,
             "hr": int(a.avg_hr) if a.avg_hr else None,
         }
+        if dt.datetime.now() - a.start_time <= feedback.ASK_WINDOW:  # son 48 saatin antrenmanı: "nasıl hissettirdi?"
+            hero["rpe"] = {"kind": "act", "id": a.id, "fb": feedback.find(db, active_profile.id, feedback.refs_for_activity(db, a))}
 
     return templates.TemplateResponse(
         request,
@@ -255,6 +262,7 @@ def dashboard(
                 "count_trend": compute_trend(week["count"], prev_week["count"]),
             },
             "hero": hero,
+            "morning": _morning_card(db, active_profile, request.state.lang),
             "more_activities": feed[1:4],
             "body": _body_summary(db, active_profile),
             "trend_labels": [d.strftime("%d.%m") for d in dates],
@@ -262,3 +270,23 @@ def dashboard(
             "trend_sleep": [round(merged[d]["sleep_duration_s"] / 3600, 1) if merged[d].get("sleep_duration_s") else None for d in dates],
         },
     )
+
+
+def _morning_card(db: Session, profile: Profile, lang: str) -> dict | None:
+    """Sabah hazırlık önerisi bekliyorsa Panel kartı."""
+    check = morning.today_check(db, profile)
+    if check is None or check.status != "sent":
+        return None
+    plan = db.get(PlannedWorkout, check.planned_workout_id) if check.planned_workout_id else None
+    return {"id": check.id, "title": plan.title if plan else "",
+            "reasons": " · ".join(morning.reason_text(r, lang) for r in json.loads(check.reasons_json or "[]"))}
+
+
+@router.post("/morning/{check_id}/{action}")
+def morning_decision(check_id: str, action: str, db: Session = Depends(get_db)):
+    from ..models import MorningCheck
+
+    check = db.get(MorningCheck, check_id)
+    if check is not None:
+        morning.decide(db, db.get(Profile, check.profile_id), check, action)
+    return RedirectResponse("/dashboard", status_code=303)

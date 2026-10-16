@@ -72,6 +72,7 @@
   <div class="section-header"><h2>{{ _('Geçmiş') }}</h2></div>
   <div class="card">
     {% if logs %}
+    <div class="table-scroll">
     <table>
       <thead>
         <tr><th>{{ _('Tarih') }}</th><th>{{ _('Kalori') }}</th><th>{{ _('Protein') }}</th><th>{{ _('Karbonhidrat') }}</th><th>{{ _('Yağ') }}</th></tr>
@@ -88,6 +89,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     {% else %}
     {{ macros.empty_state(_('Henüz beslenme verisi yok'), _('MyFitnessPal bağlandığında günlük beslenme verilerin burada görünecek.'), icon='🍎', cta_label=_('MyFitnessPal Bağla'), cta_href='/settings?profile=' ~ active_profile.id) }}
     {% endif %}

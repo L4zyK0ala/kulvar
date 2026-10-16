@@ -1,0 +1,13 @@
+{
+  "name": "Kulvar",
+  "short_name": "Kulvar",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "icons": [
+    {"src": "/static/img/apple-touch-icon.png", "sizes": "180x180", "type": "image/png"},
+    {"src": "/static/img/kulvar-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+  ]
+}

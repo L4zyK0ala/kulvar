@@ -1,0 +1,6 @@
+# Test bağımlılıkları (uygulama bağımlılıkları requirements.lock'ta):
+#   pip install --no-deps -r requirements.lock -r requirements-dev.txt
+pytest==9.1.1
+iniconfig==2.3.1
+packaging==26.3
+pluggy==1.6.0

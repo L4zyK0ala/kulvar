@@ -71,8 +71,20 @@
   </div>
 </details>
 
-<details class="card disclosure" id="koc-talimatlari">
-  <summary>{{ _('Koç talimatları') }} — {{ active_profile.name }}</summary>
+<details class="card disclosure" id="koc-talimatlari" {{ 'open' if pending_revisions }}>
+  <summary>{{ _('Koç talimatları') }} — {{ active_profile.name }}{% if pending_revisions %} <span class="badge">{{ _('{n} öneri bekliyor', n=pending_revisions|length) }}</span>{% endif %}</summary>
+  {% for r in pending_revisions %}
+  <div class="proposal">
+    <div class="metric-label">✏️ {{ _('Koçun önerisi') }} · {{ r.created_at|local_dt|ldate }}</div>
+    {% if r.old_snippet %}<div class="diff-old">{{ r.old_snippet }}</div>{% endif %}
+    {% if r.new_snippet %}<div class="diff-new">{{ r.new_snippet }}</div>{% else %}<div class="metric-caption">{{ _('(bu kısım silinecek)') }}</div>{% endif %}
+    {% if r.reason %}<div class="metric-caption">{{ _('Neden') }}: {{ r.reason }}</div>{% endif %}
+    <div style="display:flex; gap:8px; margin-top: 8px;">
+      <form method="post" action="/coach/{{ active_profile.id }}/revision/{{ r.id }}/approve"><button type="submit">{{ _('✅ Uygula') }}</button></form>
+      <form method="post" action="/coach/{{ active_profile.id }}/revision/{{ r.id }}/reject"><button type="submit" class="secondary">{{ _('❌ Reddet') }}</button></form>
+    </div>
+  </div>
+  {% endfor %}
   <p class="metric-caption" style="margin: var(--space-3) 0;">
     {{ _('Claude\'daki Spor Koçu projesinin talimatlarını buraya yapıştırabilirsin (hedefler, yarış takvimi, sakatlık geçmişi gibi). Her profilin talimatları ayrıdır.') }}
   </p>
@@ -80,6 +92,33 @@
     <textarea name="instructions" rows="8" style="width: 100%;" placeholder="{{ _('Örn. Hedefim 23 Ekim\'deki 10K yarışı...') }}">{{ coach_instructions }}</textarea>
     <button type="submit" class="secondary" style="margin-top: var(--space-3);">{{ _('Kaydet') }}</button>
   </form>
+
+  <h3 id="koc-notlari" style="margin-top: var(--space-6);">{{ _('Koçun notları') }}</h3>
+  <p class="metric-caption" style="margin: 4px 0 var(--space-3);">
+    {{ _('Koçun kendi tuttuğu güncel özet: faz, gözlenen örüntüler, ilerleme. Her Pazar haftalık değerlendirmede kendisi günceller; sen de düzenleyebilirsin. Talimatların ve doktor notları her zaman önce gelir.') }}
+    {% if active_profile.coach_notes_updated_at %}{{ _('Son güncelleme') }}: {{ active_profile.coach_notes_updated_at|local_dt|ldate }}{% endif %}
+  </p>
+  <form method="post" action="/coach/{{ active_profile.id }}/notes">
+    <textarea name="notes" rows="8" style="width: 100%;" placeholder="{{ _('Henüz not yok; koç ilk haftalık değerlendirmede yazacak.') }}">{{ active_profile.coach_notes or '' }}</textarea>
+    <button type="submit" class="secondary" style="margin-top: var(--space-3);">{{ _('Kaydet') }}</button>
+  </form>
+
+  {% if revision_history %}
+  <h3 style="margin-top: var(--space-6);">{{ _('Değişiklik geçmişi') }}</h3>
+  <table style="margin-top: var(--space-3);">
+    <tbody>
+      {% for r in revision_history %}
+      <tr>
+        <td class="num" style="white-space:nowrap;">{{ r.created_at|local_dt|ldate }}</td>
+        <td>{{ _('Talimatlar') if r.kind == 'instructions' else _('Koçun notları') }}</td>
+        <td>{{ {'coach': _('Koç'), 'user': _('Sen'), 'revert': _('Geri alma')}.get(r.source, r.source) }}</td>
+        <td>{{ {'applied': _('uygulandı'), 'pending': _('bekliyor'), 'rejected': _('reddedildi'), 'stale': _('geçersiz')}.get(r.status, r.status) }}{% if r.reason %} · <span class="metric-caption">{{ r.reason }}</span>{% endif %}</td>
+        <td>{% if r.status == 'applied' %}<form method="post" action="/coach/{{ active_profile.id }}/revision/{{ r.id }}/revert" data-confirm="{{ _('Bu değişiklikten önceki haline dönülsün mü?') }}" onsubmit="return confirm(this.dataset.confirm);"><button type="submit" class="ghost">{{ _('Geri al') }}</button></form>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 </details>
 
 <details class="disclosure-plain">
@@ -122,7 +161,7 @@
   {% if upcoming %}
   <div class="card">
     {% for w in upcoming %}
-    <div class="source-row">
+    <div class="source-row" id="plan-{{ w.id }}">
       <div class="source-row-label" style="min-width: 220px;">
         <div>
           <strong>{{ w.title }}</strong>
@@ -130,8 +169,27 @@
             {{ w.date.strftime('%d.%m.%Y') }} · {{ _(workout_type_labels.get(w.workout_type, w.workout_type)) }}
             {% if w.target_distance_m %} · {{ '%.1f'|format(w.target_distance_m / 1000) }} km{% endif %}
             {% if w.target_duration_s %} · {{ (w.target_duration_s // 60)|int }} {{ _('dk') }}{% endif %}
+            {% if w.target_hr_max %} · <span title="{{ _('Garmin saati bu nabız aralığının dışına çıkınca uyarır') }}">{% if w.target_hr_min %}♥ {{ w.target_hr_min }}–{{ w.target_hr_max }}{% else %}♥ ≤{{ w.target_hr_max }}{% endif %}</span>{% endif %}
           </div>
           {% if w.notes %}<div class="metric-caption">{{ w.notes }}</div>{% endif %}
+          {% set sv = (strength_views or {}).get(w.id) %}
+          {% if sv %}
+          <details class="strength-plan" {{ 'open' if w.date == today }}>
+            <summary>🏋️ {% if sv.routine %}{{ sv.routine.title }} · {{ _('{n} hareket', n=sv.exercises|length) }}{% else %}{{ _('Hevy rutini seç') }}{% endif %}</summary>
+            {% if routine_options %}
+            <form method="post" action="/coach-brief/{{ active_profile.id }}/plan/{{ w.id }}/routine" class="inline" style="margin: var(--space-2) 0;">
+              <select name="routine_id" onchange="this.form.submit()">
+                <option value="">{{ _('Otomatik') }}{% if sv.routine and not w.routine_id %} ({{ sv.routine.title }}){% endif %}</option>
+                {% for r in routine_options %}<option value="{{ r.id }}" {{ 'selected' if w.routine_id == r.id }}>{{ r.title }}</option>{% endfor %}
+              </select>
+            </form>
+            {% else %}<div class="metric-caption">{{ _('Hevy rutinlerin henüz çekilmedi; Hevy bağlıysa bir sonraki senkronda gelir.') }}</div>{% endif %}
+            {% if not sv.routine %}<div class="metric-caption"><a href="/coach-brief?tab=hedefler#rutinler">{{ _('Uygun rutin yok mu? Koça hazırlat →') }}</a></div>{% endif %}
+            {% if sv.exercises %}
+            {{ macros.exercise_grid(sv.exercises) }}
+            {% endif %}
+          </details>
+          {% endif %}
           {% if w.status == 'done' %}
           <span class="badge ok" style="margin-top: 4px;">✅ {{ _('Yapıldı') }}</span>
           {% endif %}
@@ -239,6 +297,103 @@
   </div>
 </div>
 
+{% if routine_params is defined %}
+<div class="section" id="rutinler">
+  <div class="section-header"><h2>{{ _('Kuvvet rutinleri') }}</h2></div>
+  <div class="card">
+    {% set d = routine_draft %}
+    {% if d and d.status in ['running', 'saving'] %}
+    <div class="bg-running" style="margin-bottom: var(--space-3);">⏳ {% if d.status == 'running' %}{{ _('Koç rutinleri hazırlıyor; sayfa bitince kendiliğinden yenilenecek.') }}{% else %}{{ _('Rutinler kaydediliyor; sayfa bitince kendiliğinden yenilenecek.') }}{% endif %}</div>
+    <script>setTimeout(() => location.reload(), 10000);</script>
+    {% elif d and d.status in ['failed', 'save_failed'] and d.error %}
+    <div style="color: var(--danger); margin-bottom: var(--space-3);">⚠️ {{ _(d.error) }}</div>
+    {% elif d and d.status == 'saved' %}
+    <div style="margin-bottom: var(--space-3);"><span class="badge ok">✅ {{ _('Kulvar\'a kaydedildi') if routine_to_kulvar else _('Hevy\'ye kaydedildi') }}</span> <span class="metric-caption">{{ d.saved_at|local_dt }} · {{ _('Kuvvet günlerinde rutin seçiminde artık görünürler; koç da planlarda bu adları kullanır.') }}</span></div>
+    {% endif %}
+    {% if routine_draft_view and d.status != 'saved' %}
+    {% if d.summary %}<p style="margin-top:0;">{{ d.summary }}</p>{% endif %}
+    {% for r in routine_draft_view %}
+    <details class="strength-plan" {{ 'open' if loop.first }}>
+      <summary>🏋️ {{ r.title }} · {{ _('{n} hareket', n=r.exercises|length) }}</summary>
+      {% if r.notes %}<div class="metric-caption">{{ r.notes }}</div>{% endif %}
+      {{ macros.exercise_grid(r.exercises) }}
+    </details>
+    {% endfor %}
+    {% if d.status in ['ready', 'save_failed'] %}
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top: var(--space-4);">
+      <form method="post" action="/coach-brief/{{ active_profile.id }}/routines/{{ d.id }}/save"><button type="submit">💾 {{ _('Kaydet') if routine_to_kulvar else _('Hevy\'ye kaydet') }}</button></form>
+      <form method="post" action="/coach-brief/{{ active_profile.id }}/routines/{{ d.id }}/discard"><button type="submit" class="secondary">{{ _('Taslağı at') }}</button></form>
+    </div>
+    <div class="metric-caption" style="margin-top: 6px;">{% if routine_to_kulvar %}{{ _('Rutinler Kulvar\'daki rutinlerine eklenir; aynı adlı bir rutin varsa o güncellenir. NOT\'u bu rutin adıyla başlayan ve Garmin\'de planlı kuvvet günleri de yeni hareketlerle güncellenir.') }}{% else %}{{ _('Rutinler Hevy\'de "Kulvar" klasörüne kaydedilir; aynı adlı bir rutin varsa kopya oluşmaz, o güncellenir. NOT\'u bu rutin adıyla başlayan ve Garmin\'de planlı kuvvet günleri de yeni hareketlerle güncellenir.') }}{% endif %}</div>
+    {% endif %}
+    {% endif %}
+    {% if not d or d.status not in ['running', 'saving'] %}
+    {% set p = routine_params %}
+    <details style="margin-top: var(--space-4);" {{ 'open' if not routine_draft_view or d.status == 'saved' }}>
+      <summary style="cursor:pointer; font-weight:600;">✨ {{ _('Koça yeni rutin hazırlat') }}</summary>
+      <form method="post" action="/coach-brief/{{ active_profile.id }}/routines/generate" class="stacked-form" style="margin-top: var(--space-3);">
+        <div class="grid grid-2">
+          <label><span class="metric-label">{{ _('Rutin sayısı') }}</span><input type="number" name="days" min="1" max="5" value="{{ p.days }}" required /></label>
+          <label><span class="metric-label">{{ _('Antrenman süresi (dk)') }}</span><input type="number" name="minutes" min="10" max="120" value="{{ p.minutes }}" required /></label>
+          <label><span class="metric-label">{{ _('Rutin adı öneki') }}</span><input type="text" name="prefix" value="{{ p.prefix }}" maxlength="20" required /></label>
+          <label><span class="metric-label">{{ _('Ağırlıklar (opsiyonel)') }}</span><input type="text" name="weights" value="{{ p.weights }}" placeholder="{{ _('2×5 kg dambıl, 12 kg kettlebell') }}" /></label>
+        </div>
+        <div class="day-picker-field" style="margin-top: var(--space-3);">
+          <span class="metric-label">{{ _('Ekipman (vücut ağırlığı her zaman dahil)') }}</span>
+          <div class="day-picker">
+            {% for key, label in routine_equipment.items() %}
+            <label><input type="checkbox" name="equipment" value="{{ key }}" {{ 'checked' if key in p.equipment }} /><span>{{ _(label) }}</span></label>
+            {% endfor %}
+          </div>
+        </div>
+        <label style="display:block; margin-top: var(--space-3);"><span class="metric-label">{{ _('Ek istek (opsiyonel)') }}</span><input type="text" name="notes" value="{{ p.notes }}" placeholder="{{ _('dizim hassas, zıplama olmasın') }}" /></label>
+        <button type="submit" style="margin-top: var(--space-3);">{{ _('Hazırlat') }}</button>
+      </form>
+      <div class="metric-caption" style="margin-top: 8px;">{% if routine_to_kulvar %}{{ _('Koç, seçtiğin ekipmanla yapılabilen hareketlerle; koç notlarını, sakatlıkları ve haftalık kuvvet hedefini dikkate alarak rutinleri hazırlar. Önce burada önizlersin, onaylarsan Kulvar\'daki rutinlerine eklenir; aynı adlı rutin güncellenir.') }}{% else %}{{ _('Koç, Hevy\'nin hareket kataloğundan seçtiğin ekipmanla yapılabilen hareketlerle; koç notlarını, sakatlıkları ve haftalık kuvvet hedefini dikkate alarak rutinleri hazırlar. Önce burada önizlersin, onaylarsan Hevy\'ye kaydedilir. Aynı önekle yeniden hazırlatırsan Hevy\'deki rutinler güncellenir.') }}{% endif %}</div>
+    </details>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="section" id="nabiz">
+  <div class="section-header"><h2>{{ _('Nabız bölgeleri') }}</h2></div>
+  <div class="card">
+    {% if active_profile.lthr %}
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;">
+      <span class="metric-label" style="margin:0;">{{ _('Laktat eşiği nabzı (LTHR)') }}</span>
+      <span class="num" style="font-size:1.6rem; font-weight:700;">{{ active_profile.lthr }}</span><span class="metric-unit">bpm</span>
+      <span class="metric-caption" style="margin:0;">
+        {% if active_profile.hr_profile_source == 'manual' %}{{ _('elle girildi') }}{% else %}Garmin{% if active_profile.lthr_date %} · {{ _('ölçüm') }} {{ active_profile.lthr_date.strftime('%d.%m.%Y') }}{% endif %}{% endif %}
+        {% if active_profile.hr_max %} · {{ _('maks') }} {{ active_profile.hr_max }} · {{ _('dinlenik') }} {{ active_profile.hr_rest }}{% endif %}
+      </span>
+    </div>
+    <div style="overflow-x:auto; margin-top: var(--space-3);">
+      <table>
+        <thead><tr><th></th>{% for z in lthr_zones %}<th>Z{{ z.n }}</th>{% endfor %}</tr></thead>
+        <tbody class="num">
+          <tr><td>{{ _('LTHR bölgeleri') }}</td>{% for z in lthr_zones %}<td>{{ zone_label(z) }}</td>{% endfor %}</tr>
+          {% if garmin_zones %}<tr><td>{{ _('Saatteki bölgeler') }}{% if garmin_zone_method %} <span class="metric-caption">({{ garmin_zone_method }})</span>{% endif %}</td>{% for z in garmin_zones %}<td>{{ zone_label(z) }}</td>{% endfor %}</tr>{% endif %}
+        </tbody>
+      </table>
+    </div>
+    <div class="metric-caption" style="margin-top: 8px;">{{ _('Koç plan satırına "Z2" ya da "Z3-Z4" yazdığında Kulvar bunu bu profilin LTHR bölgelerine göre bpm\'e çevirir ve Garmin antrenmanına hedef olarak ekler; saat aralığın dışına çıkınca uyarır. Doktor notundaki veya koç talimatındaki daha düşük bir tavan her zaman önce gelir.') }}</div>
+    {% else %}
+    <div class="metric-caption">{{ _('Henüz LTHR yok. Garmin bağlıysa günde bir kez otomatik çekilir; aşağıdan hemen yenileyebilir ya da elle girebilirsin.') }}</div>
+    {% endif %}
+    <div style="display:flex; gap: var(--space-3); flex-wrap:wrap; align-items:center; margin-top: var(--space-4);">
+      {% if has_garmin %}
+      <form method="post" action="/coach-brief/{{ active_profile.id }}/heart/refresh"><button type="submit" class="secondary">⌚ {{ _('Garmin\'den yenile') }}</button></form>
+      {% endif %}
+      <form method="post" action="/coach-brief/{{ active_profile.id }}/heart" class="inline">
+        <input type="number" name="lthr" min="100" max="220" placeholder="{{ _('LTHR (elle)') }}" value="{{ active_profile.lthr if active_profile.hr_profile_source == 'manual' else '' }}" style="width: 140px;" />
+        <button type="submit" class="secondary">{{ _('Kaydet') }}</button>
+      </form>
+    </div>
+    <div class="metric-caption" style="margin-top: 6px;">{{ _('Elle girilen LTHR, Garmin\'den gelen değerin yerine geçer; alanı boşaltıp kaydedersen Garmin\'e döner.') }}</div>
+  </div>
+</div>
+
 <div class="section">
   <div class="section-header"><h2>{{ _('Yarış takvimi') }}</h2></div>
   {% for r in races %}
@@ -286,6 +441,12 @@
 {% if health_error %}
 <div class="card" style="margin-bottom: var(--space-5); border-color: var(--danger); color: var(--danger);">{{ _(health_error) }}</div>
 {% endif %}
+{% if notice == 'doctor_note' %}
+<div class="card" style="margin-bottom: var(--space-5); border-color: var(--success);">🩺 {{ _('Doktor notu kaydediliyor; koç planı gözden geçiriyor. Cevabı birkaç dakika içinde Sohbet sekmesinde ve Telegram\'da görürsün.') }}</div>
+{% endif %}
+{% if active_profile.meds_eval_status == 'running' or (health_records|selectattr('analysis_status', 'equalto', 'running')|list) %}
+<script>setTimeout(() => location.reload(), 10000);</script>
+{% endif %}
 
 <div class="section" style="margin-top: 0;">
   <div class="section-header"><h2>{{ _('Kontrol takvimi') }} — {{ active_profile.name }}</h2></div>
@@ -327,24 +488,24 @@
 <div class="section">
   <div class="section-header"><h2>{{ _('Tahlil / rapor yükle') }}</h2></div>
   <div class="card">
-    <form method="post" action="/health/{{ active_profile.id }}/upload" enctype="multipart/form-data" data-busy="{{ _('Claude yorumluyor… (1 dk sürebilir)') }}" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = this.dataset.busy;">
+    <form method="post" action="/health/{{ active_profile.id }}/upload" enctype="multipart/form-data" data-busy="{{ _('Yükleniyor…') }}" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = this.dataset.busy;">
       <div style="display:flex; gap: var(--space-3); flex-wrap: wrap; align-items: center;">
         <select name="kind">
           {% for key, label in health_kinds.items() %}<option value="{{ key }}">{{ _(label) }}</option>{% endfor %}
         </select>
-        <input type="file" name="file" accept="application/pdf,image/jpeg,image/png,image/webp" required />
+        <input type="file" name="files" accept="application/pdf,image/jpeg,image/png,image/webp" multiple required />
       </div>
       <input type="text" name="note" placeholder="{{ _('Not (isteğe bağlı), ör. aç karnına, sabah 08:00') }}" style="width: 100%; margin-top: var(--space-3);" />
       <button type="submit" style="margin-top: var(--space-3);">{{ _('Yükle ve yorumlat') }}</button>
     </form>
-    <div class="metric-caption" style="margin-top: 8px;">{{ _('PDF veya fotoğraf (en fazla 10 MB). Claude önceki sonuçlarla karşılaştırır, doktora sorulacak soruları hazırlar; teşhis koymaz. Telegram grubuna dosya göndererek de yükleyebilirsin.') }}</div>
+    <div class="metric-caption" style="margin-top: 8px;">{{ _('Bir ya da birden fazla PDF/fotoğraf seçebilirsin (en fazla 10 belge, toplam 22 MB); aynı tahlilin belgeleri tek kayıt olarak birlikte yorumlanır. Claude önceki sonuçlarla karşılaştırır, doktora sorulacak soruları hazırlar; teşhis koymaz. Telegram grubuna dosyaları birlikte (albüm olarak) göndererek de yükleyebilirsin.') }}</div>
   </div>
 </div>
 
 <div class="section">
   <div class="section-header"><h2>{{ _('Doktor notu') }}</h2></div>
   <div class="card">
-    <form method="post" action="/health/{{ active_profile.id }}/doctor-note" data-busy="{{ _('Koç planı gözden geçiriyor…') }}" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = this.dataset.busy;">
+    <form method="post" action="/health/{{ active_profile.id }}/doctor-note" data-busy="{{ _('Kaydediliyor…') }}" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = this.dataset.busy;">
       <textarea name="note" rows="3" required style="width: 100%;" placeholder="{{ _('Ör. Kontrol normal; tempo antrenmanları serbest, yılda bir kontrol.') }}"></textarea>
       <div style="display:flex; gap: var(--space-3); align-items:center; margin-top: var(--space-3); flex-wrap: wrap;">
         <input type="date" name="record_date" value="{{ today.isoformat() }}" />
@@ -355,16 +516,137 @@
   </div>
 </div>
 
-<div class="section">
+{% macro med_form(m=None) %}
+<form method="post" action="/health/{{ active_profile.id }}/meds" class="stacked-form med-form" style="margin-top: var(--space-3);">
+  {% if m %}<input type="hidden" name="med_id" value="{{ m.id }}" />{% endif %}
+  <div class="med-grid">
+    <label><span class="metric-label">{{ _('Ad') }}</span><input type="text" name="name" required value="{{ m.name if m else '' }}" placeholder="{{ _('ör. D vitamini, Demir') }}" /></label>
+    <label><span class="metric-label">{{ _('Tür') }}</span>
+      <select name="kind">{% for k, l in (med_kinds or {}).items() %}<option value="{{ k }}" {{ 'selected' if m and m.kind == k }}>{{ _(l) }}</option>{% endfor %}</select></label>
+    <label><span class="metric-label">{{ _('Durum') }}</span>
+      <select name="status">{% for k, l in (med_statuses or {}).items() %}<option value="{{ k }}" {{ 'selected' if m and m.status == k }}>{{ _(l) }}</option>{% endfor %}</select></label>
+    <label><span class="metric-label">{{ _('Doz') }}</span><input type="text" name="dose" value="{{ m.dose or '' if m else '' }}" placeholder="{{ _('ör. 1 tablet, 1000 IU') }}" /></label>
+    <label><span class="metric-label">{{ _('Hatırlatma saatleri') }}</span><input type="text" name="times" value="{{ (m.times or '').replace(',', ', ') if m else '' }}" placeholder="08:00, 20:00" /></label>
+    <div class="day-picker-field">
+      <span class="metric-label">{{ _('Günler') }} <span class="metric-caption" style="text-transform:none; letter-spacing:0;">· {{ _('hiçbiri seçili değilse her gün') }}</span></span>
+      {% set chosen = (m.days or '').split(',') if m else [] %}
+      <div class="day-picker">
+        {% for d in range(7) %}<label><input type="checkbox" name="days" value="{{ d }}" {{ 'checked' if d|string in chosen }} /><span>{{ weekday_name(d, short=True) }}</span></label>{% endfor %}
+      </div>
+    </div>
+    <label><span class="metric-label">{{ _('Not') }}</span><input type="text" name="instructions" value="{{ m.instructions or '' if m else '' }}" placeholder="{{ _('ör. tok karnına') }}" /></label>
+    <label><span class="metric-label">{{ _('Başlangıç') }}</span><input type="date" name="start_date" value="{{ m.start_date.isoformat() if m and m.start_date else '' }}" /></label>
+    <label class="med-qty"><span class="metric-label">{{ _('Kutudaki adet (isteğe bağlı)') }}</span><input type="number" name="quantity" min="1" max="10000" inputmode="numeric" value="{{ m.quantity or '' if m and m.quantity is defined else '' }}" placeholder="{{ _('ör. 30') }}" /></label>
+    <label class="med-end"><span class="metric-label">{{ _('Bitiş (isteğe bağlı)') }}</span><input type="date" name="end_date" value="{{ m.end_date.isoformat() if m and m.end_date else '' }}" /></label>
+  </div>
+  <div class="metric-caption med-end-hint" style="margin-top: 6px;">{{ _('Kutudaki adedi girersen bitiş tarihi doz, saat ve günlere göre hesaplanır.') }}</div>
+  <label style="display:flex; flex-direction:row; align-items:center; gap:8px; margin-top: var(--space-3);"><input type="checkbox" name="reminders" value="1" {{ 'checked' if not m or m.reminders }} style="width:auto;" /> {{ _('Bu saatlerde Telegram\'dan hatırlat') }}</label>
+  <button type="submit" style="margin-top: var(--space-3);">{{ _('Kaydet') if m else _('Ekle') }}</button>
+</form>
+{% endmacro %}
+
+{% if labs is defined and (labs.main or labs.other) %}
+{% macro lab_card(l) %}
+<div class="card lab-card">
+  <div class="lab-head">
+    <span class="metric-label" style="margin:0;">{{ l.label }}</span>
+    {% if l.flag == 'high' %}<span class="badge error">↑ {{ _('yüksek') }}</span>{% elif l.flag == 'low' %}<span class="badge warn">↓ {{ _('düşük') }}</span>{% endif %}
+  </div>
+  <div><span class="num" style="font-size:1.4rem; font-weight:700;">{{ '%g'|format(l.value) }}</span> <span class="metric-unit">{{ l.unit or '' }}</span></div>
+  {{ macros.sparkline(l.spark, 'var(--danger)' if l.flag == 'high' else ('#f59e0b' if l.flag == 'low' else 'var(--viz-blue)')) }}
+  <div class="metric-caption" style="margin:0;">
+    {{ l.date.strftime('%d.%m.%Y') }}{% if l.change is not none %} · {{ '%+g'|format(l.change|round(2)) }} ({{ l.prev_date.strftime('%m.%Y') }}){% endif %}
+    {% if l.ref_low is not none or l.ref_high is not none %}<br>{{ _('ref') }} {{ '%g'|format(l.ref_low) if l.ref_low is not none else '' }}–{{ '%g'|format(l.ref_high) if l.ref_high is not none else '' }}{% endif %}
+  </div>
+</div>
+{% endmacro %}
+<div class="section" id="degerler">
+  <div class="section-header"><h2>{{ _('Kan değerleri') }}</h2></div>
+  <div class="lab-grid">{% for l in labs.main %}{{ lab_card(l) }}{% endfor %}</div>
+  {% if labs.other %}
+  <details style="margin-top: var(--space-3);"><summary class="metric-caption" style="cursor:pointer;">{{ _('Diğer değerler ({n})', n=labs.other|length) }}</summary>
+    <div class="lab-grid" style="margin-top: var(--space-3);">{% for l in labs.other %}{{ lab_card(l) }}{% endfor %}</div>
+  </details>
+  {% endif %}
+  <div class="metric-caption" style="margin-top: 8px;">{{ _('Değerler yüklediğin tahlillerden otomatik çıkarılır; rapor önceki sonuçları da listeliyorsa onlar da seyre eklenir. Referans aralığı laboratuvarın raporundaki aralıktır. Teşhis için doktoruna danış.') }}</div>
+</div>
+{% endif %}
+
+<div class="section" id="ilaclar">
+  <div class="section-header"><h2>{{ _('İlaçlar ve takviyeler') }}</h2></div>
+  {% if active_profile.meds_eval_status == 'running' %}
+  <div class="card bg-running" style="margin-bottom: var(--space-3);">⏳ {{ _('Koç takviyeleri değerlendiriyor; sayfa bitince kendiliğinden yenilenecek.') }}</div>
+  {% elif active_profile.meds_eval_status == 'failed' %}
+  <div class="card" style="margin-bottom: var(--space-3); border-color: var(--danger); color: var(--danger);">⚠️ {{ _(active_profile.meds_eval_summary or '') }}</div>
+  {% elif active_profile.meds_eval_status == 'done' and active_profile.meds_eval_summary %}
+  <details class="card disclosure" style="margin-bottom: var(--space-3);">
+    <summary>🧠 {{ _('Son değerlendirme') }}{% if active_profile.meds_eval_at %} · {{ active_profile.meds_eval_at|local_dt|ldate }}{% endif %}</summary>
+    <div class="msg-body health-summary" data-md="{{ active_profile.meds_eval_summary }}" style="margin-top: var(--space-3);"></div>
+  </details>
+  {% endif %}
+  {% for item in medications or [] %}
+  {% set m = item.med %}
+  <div class="card med-card {{ 'med-stopped' if m.status == 'stopped' }}" style="margin-bottom: var(--space-3);">
+    <div style="display:flex; justify-content:space-between; gap: var(--space-3); flex-wrap: wrap;">
+      <div>
+        <strong>{{ m.name }}</strong>{% if m.dose %} · {{ m.dose }}{% endif %}
+        <span class="badge" style="margin-left:6px;">{{ _(med_kinds[m.kind]) }}</span>
+        <span class="badge {{ 'ok' if m.status == 'active' }}">{{ _(med_statuses[m.status]) }}</span>
+        <div class="metric-caption">
+          {% if item.times %}⏰ {{ item.times|join(', ') }}{% if not m.reminders %} · {{ _('hatırlatma kapalı') }}{% endif %}{% else %}{{ _('hatırlatma saati yok') }}{% endif %}
+          · 📅 {% if item.days %}{% for d in item.days %}{{ weekday_name(d, short=True) }}{{ ', ' if not loop.last }}{% endfor %}{% else %}{{ _('her gün') }}{% endif %}
+          {% if m.instructions %} · {{ m.instructions }}{% endif %}
+          {% if m.end_date %} · {{ _('bitiş') }} {{ m.end_date.strftime('%d.%m.%Y') }}{% endif %}
+          {% if item.adherence[1] %} · {{ _('son 7 gün') }}: {{ item.adherence[0] }}/{{ item.adherence[1] }}{% endif %}
+        </div>
+        {% if m.kind == 'supplement' and m.coach_verdict %}
+        <div class="med-verdict verdict-{{ m.coach_verdict }}">
+          🧠 <strong>{{ _(med_verdicts[m.coach_verdict]) }}</strong>{% if m.coach_timing %} · {{ m.coach_timing }}{% endif %}
+          {% if m.coach_reason %}<div class="metric-caption" style="margin:2px 0 0;">{{ m.coach_reason }}</div>{% endif %}
+        </div>
+        {% elif m.kind == 'prescription' %}
+        <div class="metric-caption">{{ _('Doz ve saatler senin girdiğin gibidir; koç bunları değiştirmez.') }}</div>
+        {% endif %}
+      </div>
+      <div style="display:flex; gap:6px; align-items:flex-start; flex-wrap: wrap;">
+        {% if m.status == 'stopped' %}
+        <form method="post" action="/health/{{ active_profile.id }}/meds/{{ m.id }}/resume"><button type="submit" class="secondary">{{ _('Tekrar kullanıyorum') }}</button></form>
+        {% else %}
+        <form method="post" action="/health/{{ active_profile.id }}/meds/{{ m.id }}/stop"><button type="submit" class="secondary">{{ _('Bıraktım') }}</button></form>
+        {% endif %}
+        <form method="post" action="/health/{{ active_profile.id }}/meds/{{ m.id }}/delete" data-confirm="{{ _('{name} ve hatırlatma geçmişi silinsin mi?', name=m.name) }}" onsubmit="return confirm(this.dataset.confirm);"><button type="submit" class="danger">{{ _('Sil') }}</button></form>
+      </div>
+    </div>
+    <details style="margin-top: var(--space-2);"><summary class="metric-caption" style="cursor:pointer;">{{ _('Düzenle') }}</summary>{{ med_form(m) }}</details>
+  </div>
+  {% else %}
+  <div class="card" style="margin-bottom: var(--space-3);">{{ macros.empty_state(_('Listede ilaç veya takviye yok'), _('Kullandığın ya da kullanmayı düşündüğün takviyeleri ve doktorun verdiği ilaçları ekle; saat girersen Telegram\'dan hatırlatılır.'), icon='💊') }}</div>
+  {% endfor %}
+  <div class="card">
+    <details {{ 'open' if not medications }}><summary style="cursor:pointer; font-weight:600;">+ {{ _('İlaç veya takviye ekle') }}</summary>{{ med_form() }}</details>
+    {% if (medications or [])|selectattr('med.kind', 'equalto', 'supplement')|list %}
+    <form method="post" action="/health/{{ active_profile.id }}/meds-evaluate" data-busy="{{ _('Başlatılıyor…') }}" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = this.dataset.busy;" style="margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border);">
+      <button type="submit" class="secondary">🧠 {{ _('Takviyeleri koça değerlendirt') }}</button>
+      <div class="metric-caption" style="margin-top:6px;">{{ _('Kan tahlilleri, doktor notları ve diğer ilaçlarına göre gerekli mi, ne zaman alınmalı; tek seferde tüm liste.') }}</div>
+    </form>
+    {% endif %}
+    <div class="metric-caption" style="margin-top: 8px;">{{ _('Koç doktor değildir: takviyeler için öneri verir, doktorun verdiği ilacın dozuna ve zamanına dokunmaz. Telegram\'da /ilac ile bugünün durumunu görebilirsin.') }}</div>
+  </div>
+</div>
+
+<div class="section" id="kayitlar">
   <div class="section-header"><h2>{{ _('Kayıtlar') }}</h2></div>
   {% for r in health_records %}
   <details class="card disclosure" style="margin-top: var(--space-3);">
-    <summary>{{ _(health_kinds.get(r.kind, r.kind)) }} · {{ (r.record_date or r.created_at).strftime('%d.%m.%Y') }}{% if r.source == 'telegram' %} · Telegram{% endif %}{% if r.file_path and not r.ai_summary %} · {{ _('yorumlanmadı') }}{% endif %}</summary>
+    <summary>{{ _(health_kinds.get(r.kind, r.kind)) }} · {{ (r.record_date or r.created_at).strftime('%d.%m.%Y') }}{% if r.source == 'telegram' %} · Telegram{% endif %}{% if record_files is defined and record_files(r)|length > 1 %} · {{ _('{n} belge', n=record_files(r)|length) }}{% endif %}{% if r.analysis_status == 'running' %} · <span class="bg-running">⏳ {{ _('Claude yorumluyor…') }}</span>{% elif r.analysis_status == 'failed' %} · <span style="color: var(--danger);">⚠️ {{ _('yorum başarısız') }}</span>{% elif r.file_path and not r.ai_summary %} · {{ _('yorumlanmadı') }}{% endif %}</summary>
+    {% if r.analysis_status == 'failed' and r.analysis_error %}<div class="metric-caption" style="color: var(--danger); margin-top: var(--space-3);">{{ _(r.analysis_error) }}</div>{% endif %}
     {% if r.text_note %}<p style="margin-top: var(--space-3);"><strong>{{ _('Not') }}:</strong> {{ r.text_note }}</p>{% endif %}
     {% if r.ai_summary %}<div class="msg-body health-summary" data-md="{{ r.ai_summary }}" style="margin-top: var(--space-3); background: var(--surface-hover);"></div>{% endif %}
     <div style="display:flex; gap: 8px; margin-top: var(--space-3); flex-wrap: wrap; align-items: center;">
-      {% if r.file_path %}<a class="btn secondary" href="/health/file/{{ r.id }}" target="_blank">{{ _('Belgeyi aç') }}</a>{% endif %}
-      {% if r.file_path and not r.ai_summary %}
+      {% set docs = record_files(r) if record_files is defined else [{'name': None}] %}
+      {% if docs|length == 1 %}<a class="btn secondary" href="/health/file/{{ r.id }}" target="_blank">{{ _('Belgeyi aç') }}</a>
+      {% else %}{% for d in docs %}<a class="btn secondary" href="/health/file/{{ r.id }}?i={{ loop.index0 }}" target="_blank" title="{{ d.name or '' }}">{{ _('Belge {n}', n=loop.index) }}</a>{% endfor %}{% endif %}
+      {% if r.file_path and not r.ai_summary and r.analysis_status != 'running' %}
       <form method="post" action="/health/{{ active_profile.id }}/record/{{ r.id }}/analyze"><button type="submit" class="secondary">{{ _('Yorumlat') }}</button></form>
       {% endif %}
       <form method="post" action="/health/{{ active_profile.id }}/record/{{ r.id }}/delete" data-confirm="{{ _('Bu kayıt ve dosyası silinsin mi?') }}" onsubmit="return confirm(this.dataset.confirm);"><button type="submit" class="danger">{{ _('Sil') }}</button></form>
@@ -389,7 +671,44 @@ const I18N = {{ {
   'disconnected': _('Bağlantı kesildi: '),
   'copied_full': _('Kopyalandı — Spor Koçu sohbetine yapıştırabilirsin.'),
   'copied': _('Kopyalandı.'),
+  'review_proposals': _('Önerileri incele →'),
+  'med_end_hint': _('Kutu {days} gün yeter; bitiş tarihi buna göre dolduruldu.'),
 } | tojson }};
+
+// İlaç formu: kutudaki adetten bitiş tarihi (meds.end_date_for ile aynı kural)
+(() => {
+  const UNIT = /^\s*(\d+(?:[.,]\d+)?|yarım|half)\s*(tablet|tab|tb|kapsül|kapsul|kaps|caps|capsule|softgel|draje|pastil|damla|drop|ölçek|olcek|scoop|saşe|şase|sase|sachet|adet|pill|puf|puff|ampul|kaşık|kasik|piece)/i;
+  const perIntake = (dose) => {
+    const m = UNIT.exec(dose || '');
+    if (!m) return 1;
+    const raw = m[1].toLowerCase();
+    const v = raw === 'yarım' || raw === 'half' ? 0.5 : parseFloat(raw.replace(',', '.'));
+    return v > 0 ? v : 1;
+  };
+  const timeCount = (raw) => new Set((raw || '').split(/[,\s;]+/).map((t) => /^(\d{1,2})[:.](\d{2})$/.exec(t))
+    .filter((m) => m && +m[1] < 24 && +m[2] < 60).map((m) => +m[1] * 60 + +m[2])).size;
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  document.querySelectorAll('form.med-form').forEach((form) => {
+    const f = form.elements, hint = form.querySelector('.med-end-hint');
+    const calc = () => {
+      const n = parseInt(f.quantity.value, 10);
+      if (!n || n < 1) return;
+      let intakes = Math.floor(n / perIntake(f.dose.value) + 1e-9);
+      if (intakes < 1) return;
+      const perDay = Math.max(1, timeCount(f.times.value));
+      const days = [...form.querySelectorAll('input[name="days"]:checked')].map((i) => +i.value);
+      const start = f.start_date.value ? new Date(f.start_date.value + 'T12:00') : new Date();
+      const d = new Date(start);
+      for (let i = 0; i < 3660; i++) {
+        if (!days.length || days.includes((d.getDay() + 6) % 7)) { intakes -= perDay; if (intakes <= 0) break; }
+        d.setDate(d.getDate() + 1);
+      }
+      f.end_date.value = iso(d);
+      hint.textContent = I18N.med_end_hint.replace('{days}', Math.round((d - start) / 86400000) + 1);
+    };
+    ['input', 'change'].forEach((ev) => form.addEventListener(ev, (e) => { if (e.target !== f.end_date) calc(); }));
+  });
+})();
 </script>
 
 {% if tab == 'sohbet' %}
@@ -499,9 +818,16 @@ document.getElementById('chat-form').addEventListener('submit', async (ev) => {
         const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
         if (!line.trim()) continue;
         const e = JSON.parse(line);
-        if (e.t === 'delta') { acc += e.text; body.innerHTML = md(acc); chatLog.scrollTop = chatLog.scrollHeight; }
+        if (e.t === 'delta') { acc += e.text; body.innerHTML = md(acc.split('<<<')[0]); chatLog.scrollTop = chatLog.scrollHeight; }
         else if (e.t === 'error') { reply.classList.add('msg-error'); body.textContent = e.message; }
         else if (e.t === 'done') {
+          if (e.display) body.innerHTML = md(e.display);
+          if (e.memory && e.memory.proposals && e.memory.proposals.length) {
+            const link = document.createElement('a');
+            link.href = '#koc-talimatlari'; link.className = 'section-link'; link.textContent = I18N.review_proposals;
+            link.addEventListener('click', () => { document.getElementById('koc-talimatlari').open = true; });
+            reply.appendChild(link);
+          }
           if (e.truncated) body.insertAdjacentHTML('beforeend', `<p class="metric-caption">${esc(I18N.truncated)}</p>`);
           if (e.plan_lines && e.plan_lines.length) reply.appendChild(planForm(e.plan_lines));
           document.getElementById('chat-cost').textContent = fmt(I18N.cost_line, {

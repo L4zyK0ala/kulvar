@@ -8,7 +8,6 @@ profilin grubuna cevap verir.
 """
 from __future__ import annotations
 
-import base64
 import datetime as dt
 import html
 import logging
@@ -20,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
+from .clock import utcnow
 from . import i18n
 from .config import settings
 from .crypto import decrypt_payload, encrypt_payload
@@ -221,6 +221,31 @@ def send_coach_reply(db, profile: Profile, result: dict) -> None:
     if suggestion and message_id:
         suggestion.telegram_message_id = message_id
         db.commit()
+    for p in (result.get("memory") or {}).get("proposals", []):
+        send_instruction_proposal(db, profile, p)
+
+
+def proposal_text(profile: Profile, old: str | None, new: str | None, reason: str | None) -> str:
+    lines = [f"✏️ **{T(profile, 'Talimat değişikliği önerisi')}**"]
+    if old:
+        lines.append(f"{T(profile, 'Eski')}: {old}")
+    lines.append(f"{T(profile, 'Yeni')}: {new}" if new else T(profile, "(bu kısım silinecek)"))
+    if reason:
+        lines.append(f"{T(profile, 'Neden')}: {reason}")
+    return "\n".join(lines)
+
+
+def send_instruction_proposal(db, profile: Profile, p: dict) -> None:
+    from .models import InstructionRevision
+
+    message_id = send_to_profile(profile, proposal_text(profile, p.get("old"), p.get("new"), p.get("reason")), [[
+        {"text": T(profile, "✅ Uygula"), "callback_data": f"ir:{p['id']}:ok"},
+        {"text": T(profile, "❌ Reddet"), "callback_data": f"ir:{p['id']}:no"},
+    ]])
+    rev = db.get(InstructionRevision, p["id"])
+    if rev is not None and message_id:
+        rev.telegram_message_id = message_id
+        db.commit()
 
 
 def apply_suggestion(db, suggestion: PlanSuggestion) -> str:
@@ -228,16 +253,17 @@ def apply_suggestion(db, suggestion: PlanSuggestion) -> str:
     from .integrations import garmin as garmin_integration
     from .routers.coach import _GARMIN_PUSHABLE_TYPES, parse_plan_text, replace_existing_plans
 
-    rows, _ = parse_plan_text(suggestion.plan_text)
+    owner = db.get(Profile, suggestion.profile_id)
+    rows, _ = parse_plan_text(suggestion.plan_text, owner)
     credential = (
         db.query(Credential).filter(Credential.profile_id == suggestion.profile_id, Credential.source == "garmin").first()
     )
     payload = decrypt_payload(credential.encrypted_payload) if credential else None
-    owner = db.get(Profile, suggestion.profile_id)
     notes = [T(owner, "♻️ {label}: yerine yenisi geldi", label=label) for label in
              replace_existing_plans(db, suggestion.profile_id, {row["date"] for row in rows}, payload)]
     for row in rows:
         workout = PlannedWorkout(profile_id=suggestion.profile_id, **row)
+        workout.profile = owner
         label = f"{row['date']:%d.%m} {row['title']}"
         if row["workout_type"] not in _GARMIN_PUSHABLE_TYPES:
             notes.append(T(owner, "📅 {label}: plana eklendi (dinlenme/diğer — Garmin'e gönderilmez)", label=label))
@@ -262,6 +288,10 @@ def workout_label(w: PlannedWorkout, profile: Profile | None = None) -> str:
         bits.append(f"{w.target_distance_m / 1000:g} km")
     if w.target_duration_s:
         bits.append(f"{int(w.target_duration_s // 60)} " + (T(profile, "dk") if profile else "dk"))
+    if w.target_hr_max:
+        from .routers.coach import hr_target_label
+
+        bits.append(hr_target_label(w))
     return " · ".join(bits) + (" ⌚" if w.garmin_workout_id else "")
 
 
@@ -282,14 +312,14 @@ def _workout_action(db, profile: Profile, w: PlannedWorkout, action: str) -> tup
 
     replan = [[{"text": T(profile, "🔄 Koç yeniden planlasın"), "callback_data": f"rp:{w.id}"}]]
     if action == "done":
-        w.status, w.status_at = "done", dt.datetime.utcnow()
+        w.status, w.status_at = "done", utcnow()
         db.commit()
         if not active_plans(db, profile.id).filter(PlannedWorkout.date > max(w.date, dt.date.today())).first():
             return (T(profile, "✅ {title} yapıldı olarak işaretlendi. Sonrası için plan yok.", title=w.title),
                     [[{"text": T(profile, "🔄 Koç sıradakini planlasın"), "callback_data": f"rp:{w.id}"}]])
         return T(profile, "✅ {title} yapıldı olarak işaretlendi.", title=w.title), None
     if action == "skip":
-        w.status, w.status_at = "skipped", dt.datetime.utcnow()
+        w.status, w.status_at = "skipped", utcnow()
         note = ""
         if w.garmin_workout_id:
             credential = db.query(Credential).filter(Credential.profile_id == profile.id, Credential.source == "garmin").first()
@@ -346,6 +376,7 @@ _HELP = """**Kulvar Koç** — bu grup {name} profiline bağlı.
 • /doktor <not> — doktorun söylediklerini kaydet, koç planı buna göre günceller.
 • /plan — planlı antrenmanlar (✅ Yapıldı / ❌ Yapılmadı / 📅 Yarına taşı)
 • /hafta — haftalık hedef durumu (koşu / uzun koşu / kuvvet) · /saglik — kontrol tarihleri
+• /ilac — bugünkü ilaç ve takviyeler; hatırlatmalardaki ✅ Aldım / ⏰ 30 dk sonra / ⏭️ Atla ile işaretle
 • Her akşam {hour}:00'de günün değerlendirmesi ve yarının önerisi; Pazar akşamı gelecek haftanın planı gelir."""
 
 
@@ -394,6 +425,13 @@ def _handle_message(msg: dict, token: str) -> None:
         if command in ("/start", "/yardim", "/help"):
             send(token, chat_id, _help(profile))
             return
+        if command in ("/ilac", "/ilaç", "/meds"):
+            from . import meds
+
+            lines = meds.today_lines(db, profile)
+            send(token, chat_id, f"**{T(profile, 'Bugünkü ilaçlar ve takviyeler')}**\n" + ("\n".join(lines) if lines else T(profile, "Listede aktif ilaç veya takviye yok.")))
+            return
+
         if command in ("/hafta", "/week"):
             from . import training
 
@@ -439,7 +477,7 @@ def _handle_message(msg: dict, token: str) -> None:
         elif msg.get("document") and msg["document"].get("mime_type") in health.SUPPORTED_MIME:
             file_info = (msg["document"]["file_id"], msg["document"]["mime_type"])
         if file_info:
-            _receive_file(db, profile, token, file_info, text)
+            _receive_file(db, profile, token, file_info, text, msg.get("media_group_id"))
             return
 
         if not text or text.startswith("/"):
@@ -451,7 +489,7 @@ def _handle_message(msg: dict, token: str) -> None:
         db.close()
 
 
-def _receive_file(db, profile: Profile, token: str, file_info: tuple[str, str], caption: str) -> None:
+def _receive_file(db, profile: Profile, token: str, file_info: tuple[str, str], caption: str, group: str | None = None) -> None:
     from . import health
 
     file_id, mime = file_info
@@ -466,8 +504,23 @@ def _receive_file(db, profile: Profile, token: str, file_info: tuple[str, str], 
     except (requests.RequestException, ValueError) as exc:
         send_to_profile(profile, T(profile, "⚠️ Dosya kaydedilemedi: {error}", error=T(profile, str(exc))))
         return
-    record = HealthRecord(profile_id=profile.id, kind=None, file_path=rel, mime_type=mime,
-                          text_note=caption or None, source="telegram")
+    if group:
+        # Birlikte (albüm olarak) gönderilen belgeler aynı kayda eklenir; tür sorusu bir kez sorulur.
+        recent = utcnow() - dt.timedelta(minutes=5)
+        pending = (db.query(HealthRecord)
+                   .filter(HealthRecord.profile_id == profile.id, HealthRecord.telegram_group == group,
+                           HealthRecord.kind.is_(None), HealthRecord.created_at >= recent).first())
+        if pending is not None:
+            if len(health.record_files(pending)) >= health.MAX_FILES:
+                (health.DATA_DIR / rel).unlink(missing_ok=True)
+                return
+            health.add_file(pending, rel, mime)
+            if caption and not pending.text_note:
+                pending.text_note = caption
+            db.commit()
+            return
+    record = HealthRecord(profile_id=profile.id, kind=None, text_note=caption or None, source="telegram", telegram_group=group)
+    health.add_file(record, rel, mime)
     db.add(record)
     db.commit()
     send_to_profile(profile, T(profile, "Bu dosya ne?"), [
@@ -537,6 +590,98 @@ def _handle_callback(cb: dict, token: str) -> None:
             send_coach_reply(db, profile, result)
             return
 
+        if kind == "mc":  # sabah hazırlık: zor koşuyu kolaya çevir / planı koru
+            from . import morning
+            from .models import MorningCheck
+
+            check = db.get(MorningCheck, obj_id)
+            if check is None or check.profile_id != profile.id:
+                api("answerCallbackQuery", token, callback_query_id=cb["id"])
+                return
+            api("answerCallbackQuery", token, callback_query_id=cb["id"], text=T(profile, "İşleniyor…"))
+            outcome = morning.decide(db, profile, check, action)
+            text = {"eased": "✅ " + T(profile, "Bugünkü koşu kolaya çevrildi; Garmin'deki antrenman da güncellendi."),
+                    "kept": "👍 " + T(profile, "Plan korundu. Isınmada kendini dinle."),
+                    "done": T(profile, "Bu öneri zaten işlendi.")}[outcome]
+            api("editMessageText", token, chat_id=chat_id, message_id=message_id, text=text)
+            return
+
+        if kind == "pg":  # kademeli yüklenme önerisi
+            from . import progression
+            from .models import ProgressionSuggestion
+
+            s = db.get(ProgressionSuggestion, obj_id)
+            if s is None or s.profile_id != profile.id:
+                api("answerCallbackQuery", token, callback_query_id=cb["id"])
+                return
+            outcome = progression.decide(db, profile, s, apply=action == "ok")
+            api("answerCallbackQuery", token, callback_query_id=cb["id"], text={
+                "applied": T(profile, "Rutin güncellendi ✅"), "rejected": T(profile, "Tamam, rutin aynı kalıyor."),
+                "stale": T(profile, "Rutin bu arada değişmiş; öneri uygulanmadı."), "done": T(profile, "Bu öneri zaten işlendi."),
+            }[outcome])
+            if outcome in ("applied", "rejected", "stale"):
+                mark = {"applied": "✅", "rejected": "⏭️", "stale": "⚠️"}[outcome]
+                api("editMessageText", token, chat_id=chat_id, message_id=message_id,
+                    text=f"{mark} {progression.describe(s, i18n.normalize(profile.language))}")
+            return
+
+        if kind == "sw":  # saatten gelen kuvvet antrenmanı taslağını planlandığı gibi onayla
+            from . import strength_log
+            from .models import StrengthWorkout
+
+            workout = db.get(StrengthWorkout, obj_id)
+            if workout is None or workout.profile_id != profile.id or workout.status != "draft":
+                api("answerCallbackQuery", token, callback_query_id=cb["id"], text=T(profile, "Bu antrenman zaten onaylandı."))
+                return
+            strength_log.confirm(db, workout)
+            api("answerCallbackQuery", token, callback_query_id=cb["id"], text=T(profile, "Onaylandı ✅"))
+            lines = [f"✅ {T(profile, '**{title}** onaylandı; Garmin ve Strava birkaç dakika içinde güncellenir.', title=workout.title)}"]
+            lines += [f"• {line}" for line in strength_log.summary_lines(workout, i18n.normalize(profile.language))]
+            api("editMessageText", token, chat_id=chat_id, message_id=message_id, text=md_to_html("\n".join(lines)), parse_mode="HTML")
+            return
+
+        if kind == "md":
+            from . import meds
+            from .models import Medication, MedicationLog
+
+            log = db.get(MedicationLog, obj_id)
+            if log is None or log.profile_id != profile.id:
+                api("answerCallbackQuery", token, callback_query_id=cb["id"])
+                return
+            outcome = meds.respond(db, log, action)
+            med = db.get(Medication, log.medication_id)
+            name = meds.label(med) if med else ""
+            api("answerCallbackQuery", token, callback_query_id=cb["id"], text={
+                "taken": T(profile, "Kaydedildi ✅"), "skipped": T(profile, "Atlandı"),
+                "snoozed": T(profile, "30 dk sonra tekrar hatırlatacağım"), "done": T(profile, "Bu hatırlatma zaten işlendi."),
+            }[outcome])
+            if outcome != "done":
+                api("editMessageText", token, chat_id=chat_id, message_id=message_id, text={
+                    "taken": "✅ " + T(profile, "{name} alındı ({time})", name=name, time=f"{dt.datetime.now():%H:%M}"),
+                    "skipped": "⏭️ " + T(profile, "{name} bugün bu saatte atlandı", name=name),
+                    "snoozed": "⏰ " + T(profile, "{name}: 30 dk sonra tekrar hatırlatılacak", name=name),
+                }[outcome])
+            return
+
+        if kind == "ir":
+            from . import coach_memory
+            from .models import InstructionRevision
+
+            rev = db.get(InstructionRevision, obj_id)
+            if rev is None or rev.profile_id != profile.id:
+                api("answerCallbackQuery", token, callback_query_id=cb["id"])
+                return
+            outcome = coach_memory.decide(db, profile, rev, approve=(action == "ok"))
+            api("answerCallbackQuery", token, callback_query_id=cb["id"])
+            api("editMessageReplyMarkup", token, chat_id=chat_id, message_id=message_id, reply_markup={"inline_keyboard": []})
+            send_to_profile(profile, {
+                "applied": T(profile, "✅ Talimat güncellendi. Kulvar'daki geçmişten geri alabilirsin."),
+                "rejected": T(profile, "❌ Öneri reddedildi; talimat değişmedi."),
+                "stale": T(profile, "⚠️ Talimat bu arada değişmiş, öneri artık uygulanamıyor."),
+                "done": T(profile, "Bu öneri zaten işlendi."),
+            }[outcome])
+            return
+
         if kind == "hr":
             record = db.get(HealthRecord, obj_id)
             if record is None or record.profile_id != profile.id or record.kind is not None:
@@ -549,18 +694,14 @@ def _handle_callback(cb: dict, token: str) -> None:
                 send_to_profile(profile, "Dosya silindi.")
                 return
             if action == "chat":
-                data_bytes = health.file_bytes(record)
-                if data_bytes is None:
+                blocks = health.content_blocks(record)
+                if not blocks:
                     send_to_profile(profile, T(profile, "⚠️ Dosya bulunamadı."))
                     return
-                b64 = base64.standard_b64encode(data_bytes).decode()
-                block = ({"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64}}
-                         if record.mime_type == "application/pdf"
-                         else {"type": "image", "source": {"type": "base64", "media_type": record.mime_type, "data": b64}})
                 question = record.text_note or "Bu görseli yorumla."
                 health.delete_record(db, record)  # sağlık kaydı değil; içerik sohbet geçmişinde kalır
                 typing(profile)
-                result = coach_chat.reply(db, profile, [block, {"type": "text", "text": question}],
+                result = coach_chat.reply(db, profile, [*blocks, {"type": "text", "text": question}],
                                           display_text=f"🖼️ {question}", channel="telegram")
                 send_coach_reply(db, profile, result)
                 return

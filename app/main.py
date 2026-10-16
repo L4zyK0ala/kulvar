@@ -18,9 +18,21 @@ from .scheduler import start_scheduler, stop_scheduler
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
+def _reset_interrupted_jobs() -> None:
+    from . import health, routine_builder
+
+    db = SessionLocal()
+    try:
+        health.reset_interrupted(db)
+        routine_builder.reset_interrupted(db)
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    _reset_interrupted_jobs()
     start_scheduler()
     telegram_bot.start()
     yield

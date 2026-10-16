@@ -384,6 +384,7 @@ form.inline {
 
 .badge.ok { color: var(--success); border-color: rgba(52, 211, 153, 0.3); }
 .badge.error { color: var(--danger); border-color: rgba(248, 105, 125, 0.3); }
+.badge.warn { color: #b45309; border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.10); }
 
 .badge-dot {
   width: 7px;
@@ -399,6 +400,7 @@ form.inline {
 .badge-source.strava { color: var(--source-strava); background: rgba(252, 93, 51, 0.12); }
 .badge-source.hevy { color: var(--source-hevy); background: rgba(177, 140, 247, 0.12); }
 .badge-source.mfp { color: var(--source-mfp); background: rgba(52, 211, 153, 0.12); }
+.badge-source.kulvar { color: var(--primary); background: var(--primary-dim); }
 
 /* ==========================================================================
    Tables (kept for settings / secondary data, de-emphasized)
@@ -981,8 +983,11 @@ nav.topbar .links a:hover {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 180px;
+  min-width: min(180px, 100%);
 }
+
+/* Metin bloğu dar ekranda kutuya sığsın (uzun hareket adı, rutin seçimi, yol) */
+.source-row-label > div { min-width: 0; overflow-wrap: anywhere; }
 
 .source-row-icon {
   width: 34px;
@@ -1180,3 +1185,125 @@ details.disclosure-plain > summary { margin-bottom: var(--space-4); }
 .nav-right { display: flex; align-items: center; gap: 6px; }
 .lang-switch { margin: 0; }
 .lang-switch button { padding: 4px 8px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; border-radius: 8px; }
+
+/* Koç talimat önerileri: eski → yeni */
+.proposal { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); margin-top: var(--space-3); }
+.diff-old, .diff-new { font-size: 0.88rem; padding: 6px 10px; border-radius: 8px; margin-top: 6px; white-space: pre-wrap; }
+.diff-old { background: color-mix(in srgb, var(--danger) 10%, transparent); text-decoration: line-through; color: var(--text-secondary); }
+.diff-new { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--text-primary); }
+
+/* İlaçlar ve takviyeler */
+.med-stopped { opacity: 0.6; }
+.med-verdict { margin-top: 8px; padding: 6px 10px; border-radius: 8px; font-size: 0.88rem; background: var(--surface-hover); }
+.verdict-needed { background: color-mix(in srgb, var(--success) 12%, transparent); }
+.verdict-not_needed { background: color-mix(in srgb, var(--danger) 9%, transparent); }
+.verdict-ask_doctor { background: color-mix(in srgb, var(--warning) 14%, transparent); }
+
+/* Arka planda süren iş göstergesi */
+.bg-running { color: var(--text-secondary); }
+.card.bg-running { border-color: var(--primary); }
+
+/* İlaç günleri seçici */
+.day-picker-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.day-picker { display: flex; gap: 6px; flex-wrap: wrap; }
+.day-picker label { display: inline-flex !important; flex-direction: row !important; cursor: pointer; }
+.day-picker input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.day-picker span { display: inline-block; min-width: 44px; text-align: center; padding: 7px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); user-select: none; }
+.day-picker input:checked + span { background: var(--primary); border-color: var(--primary); color: #fff; }
+.day-picker input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* Kuvvet günü hareketleri: iki kareli (başlangıç/bitiş) animasyon */
+.strength-plan { margin-top: 8px; }
+.strength-plan > summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+.exercise-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr)); gap: 10px; margin-top: 8px; }
+.exercise-card { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px; background: var(--surface); }
+.exercise-media { position: relative; width: 92px; height: 70px; flex-shrink: 0; border-radius: 8px; overflow: hidden; background: #fff; }
+.exercise-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.exercise-media .frame-b { animation: exercise-frame 2.4s ease-in-out infinite; }
+@keyframes exercise-frame { 0%, 35% { opacity: 0; } 50%, 85% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .exercise-media .frame-b { animation: none; opacity: 0; } }
+.exercise-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; font-size: 1.6rem; }
+.exercise-body { min-width: 0; font-size: 0.88rem; }
+.exercise-steps { margin: 4px 0 0 16px; padding: 0; font-size: 0.8rem; color: var(--text-secondary); }
+
+/* Dar ekranlarda taşma önleme: seçim kutuları ve uzun yollar kutudan çıkmasın */
+select { max-width: 100%; }
+code { overflow-wrap: anywhere; }
+.exercise-card, .exercise-body { min-width: 0; }
+.exercise-body { overflow-wrap: anywhere; }
+@media (max-width: 719px) {
+  .source-row-label { flex: 1 1 100%; min-width: 0 !important; }
+}
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* İlaç formu: 4 sütun; Başlangıç ile Bitiş aynı sütunda alt alta (2 sütunda da) */
+.med-grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.med-grid .med-qty { grid-column: 3; }
+.med-grid .med-end { grid-column: 4; }
+@media (max-width: 1000px) {
+  .med-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .med-grid .med-qty, .med-grid .med-end { grid-column: auto; }
+}
+@media (max-width: 560px) { .med-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Kuvvet antrenmanı onay ekranı (telefonda tek elle kullanılabilir) */
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.workout-ex { margin-bottom: var(--space-3); }
+.workout-ex-head { display: flex; align-items: center; gap: 12px; margin-bottom: var(--space-3); }
+.set-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.set-no { width: 22px; text-align: center; font-weight: 700; color: var(--text-secondary); flex-shrink: 0; }
+.set-field { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--text-secondary); min-width: 0; }
+.set-field input { width: 64px; text-align: center; font-size: 1.05rem; padding: 8px 4px; }
+.set-del { margin-left: auto; padding: 6px 8px; flex-shrink: 0; }
+.set-hint { margin: -2px 0 6px 30px; font-size: 0.8rem; color: var(--text-secondary); }
+.set-add { margin-top: 6px; padding: 6px 14px; font-size: 0.85rem; }
+.workout-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: var(--space-4); }
+.workout-actions button { flex: 1 1 160px; }
+.strength-source { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.routine-title { font-size: 1.5rem; font-weight: 700; width: 100%; margin-bottom: 6px; }
+.routine-ex-tools { display: flex; gap: 2px; flex-shrink: 0; }
+.routine-ex-tools button { padding: 6px 8px; }
+.routine-ex-foot { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+
+/* Canlı antrenman ekranı (telefon) */
+.live { max-width: 640px; margin: 0 auto; }
+.live-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: var(--space-3); }
+.live-title { font-size: 1.15rem; font-weight: 700; overflow-wrap: anywhere; }
+.live-toggles { display: flex; gap: 4px; flex-shrink: 0; }
+.live-toggles button { font-size: 1.2rem; padding: 6px 10px; }
+.live-nav { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: var(--space-3); -webkit-overflow-scrolling: touch; }
+.live-pill { flex-shrink: 0; padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; background: var(--surface); border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; }
+.live-pill.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.live-pill.done:not(.active) { color: var(--success); border-color: var(--success); }
+.live-card { padding: var(--space-4); }
+.live-media { position: relative; width: 100%; aspect-ratio: 4 / 3; border-radius: var(--radius-md); overflow: hidden; background: #fff; margin-bottom: var(--space-3); display: flex; align-items: center; justify-content: center; }
+.live-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.live-media .frame-b { animation: exercise-frame 2.4s ease-in-out infinite; }
+.live-media .exercise-placeholder { font-size: 3rem; }
+.live-ex-title { font-size: 1.2rem; margin: 0 0 6px; overflow-wrap: anywhere; }
+.live-set { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+.live-set.done { opacity: 0.65; }
+.live-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; flex: 1; min-width: 0; }
+.live-fields .set-field input { width: 62px; }
+.live-prev { width: 100%; font-size: 0.75rem; color: var(--text-secondary); }
+.live-check { width: 48px; height: 48px; border-radius: 50%; font-size: 1.3rem; font-weight: 800; padding: 0; flex-shrink: 0; background: var(--surface-hover); color: var(--text-secondary); border: 2px solid var(--border-strong); }
+.live-check.on { background: var(--success); border-color: var(--success); color: #fff; }
+.live-go { min-width: 56px; padding: 8px; flex-shrink: 0; }
+.live-step { display: flex; gap: 8px; margin-top: var(--space-4); }
+.live-step button { flex: 1; }
+.live-rest { position: fixed; left: 12px; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 50; text-align: center;
+  background: var(--surface-elevated); border: 2px solid var(--primary); border-radius: var(--radius-lg); padding: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); max-width: 616px; margin: 0 auto; }
+.live-rest-time { font-size: 3rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+
+/* Antrenman sonrası his (RPE 1–10): yeşilden kırmızıya */
+.rpe-scale { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; }
+.rpe-btn { padding: 10px 0; font-weight: 700; font-variant-numeric: tabular-nums; border-radius: 8px; background: var(--surface-hover);
+  color: var(--text-primary); border: 1px solid var(--border); }
+.rpe-btn.on { color: #fff; border-color: transparent; background: hsl(calc(140 - (var(--rpe) - 1) * 15) 65% 42%); }
+.rpe-legend { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-secondary); margin-top: 4px; }
+
+/* Kan değerleri seyri */
+.lab-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); }
+.lab-card { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.lab-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.lab-card .sparkline { width: 100%; height: 32px; }

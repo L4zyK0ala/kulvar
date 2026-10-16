@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros with context %}
+{% block title %}{{ workout.title }} — Kulvar{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <div class="hero-greeting">
+    <h1 style="overflow-wrap:anywhere;">{{ workout.title }}</h1>
+    <p class="subtitle">
+      {{ workout.start_time|ldate }}{% if workout.duration_s %} · {{ (workout.duration_s / 60)|round|int }} {{ _('dk') }}{% endif %}
+      · {{ total_sets }} {{ _('set') }}{% if volume %} · {{ volume|num }} kg{% endif %}
+      · {% if workout.status == 'draft' %}<span class="badge warn">{{ _('Onay bekliyor') }}</span>{% else %}<span class="badge ok">✅ {{ _('Onaylandı') }}</span>{% endif %}
+    </p>
+  </div>
+</div>
+
+{% if saved == 'confirmed' %}
+<div class="card" style="margin-bottom: var(--space-4); border-color: var(--success);">✅ {{ _('Onaylandı. Garmin\'deki setler ve Strava açıklaması birkaç dakika içinde güncellenir.') }}</div>
+{% elif saved %}
+<div class="card" style="margin-bottom: var(--space-4);">💾 {{ _('Kaydedildi.') }}</div>
+{% endif %}
+{% if rpe %}<div style="margin-bottom: var(--space-4);">{{ macros.rpe_widget(rpe, '/strength/workouts/' ~ workout.id) }}</div>{% endif %}
+{% if workout.status == 'draft' %}
+<div class="metric-caption" style="margin-bottom: var(--space-4);">{{ _('Değerler plandan geldi; saatin saydığı değerler her setin altında. Farklı yaptığın bir şey varsa düzelt, sonra onayla.') }}</div>
+{% endif %}
+
+<form method="post" action="/strength/workouts/{{ workout.id }}" class="workout-form">
+  {# Klavyede "Git"e basılınca form bu (görünmez) butonla gönderilsin; ilk "sil" butonuyla değil. #}
+  <button type="submit" name="action" value="save" class="visually-hidden" tabindex="-1" aria-hidden="true">{{ _('Kaydet') }}</button>
+
+  {% for g in groups %}
+  <div class="card workout-ex" id="ex-{{ g.position }}">
+    <div class="workout-ex-head">
+      <div class="exercise-media">
+        {% if g.frames|length >= 2 %}<img src="/static/{{ g.frames[0] }}" alt="" loading="lazy" /><img class="frame-b" src="/static/{{ g.frames[1] }}" alt="" loading="lazy" />
+        {% elif g.frames %}<img src="/static/{{ g.frames[0] }}" alt="" loading="lazy" />
+        {% else %}<span class="exercise-placeholder">{{ '🔥' if g.warmup else '🏋️' }}</span>{% endif %}
+      </div>
+      <strong style="overflow-wrap:anywhere;">{{ g.title }}</strong>
+    </div>
+
+    {% for s in g.sets %}
+    <div class="set-row">
+      <span class="set-no">{{ '🔥' if g.warmup else loop.index }}</span>
+      {% if g.warmup or g.timed %}
+      <label class="set-field"><input type="number" name="sec_{{ s.id }}" value="{{ s.duration_s|int if s.duration_s is not none else '' }}" min="0" inputmode="numeric" /> <span>{{ _('sn') }}</span></label>
+      {% else %}
+      <label class="set-field"><input type="number" name="reps_{{ s.id }}" value="{{ s.reps if s.reps is not none else '' }}" min="0" inputmode="numeric" /> <span>{{ _('tekrar') }}</span></label>
+      <label class="set-field"><input type="number" name="kg_{{ s.id }}" value="{{ '%g'|format(s.weight_kg) if s.weight_kg else '' }}" min="0" step="0.5" inputmode="decimal" placeholder="—" /> <span>kg</span></label>
+      {% endif %}
+      {% if not g.warmup %}<button type="submit" name="action" value="del:{{ s.id }}" class="ghost set-del" title="{{ _('Seti sil') }}" aria-label="{{ _('Seti sil') }}">✕</button>{% endif %}
+    </div>
+    {% if not g.warmup and (s.planned_reps is not none or s.watch_reps is not none or s.planned_duration_s) %}
+    <div class="set-hint">
+      {% if s.planned_reps is not none %}{{ _('plan') }} {{ s.planned_reps }}{% if s.planned_weight_kg %} × {{ '%g'|format(s.planned_weight_kg) }} kg{% endif %}{% elif s.planned_duration_s %}{{ _('plan') }} {{ s.planned_duration_s|int }} {{ _('sn') }}{% endif %}
+      {% if s.watch_reps is not none %} · ⌚ {{ s.watch_reps }}{% if s.watch_weight_kg %} × {{ '%g'|format(s.watch_weight_kg) }} kg{% endif %}{% endif %}
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% if not g.warmup %}
+    <button type="submit" name="action" value="add:{{ g.position }}" class="secondary set-add">+ {{ _('Set ekle') }}</button>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <div class="workout-actions">
+    {% if workout.status == 'draft' %}
+    <button type="submit" name="action" value="confirm">✅ {{ _('Onayla') }}</button>
+    <button type="submit" name="action" value="save" class="secondary">💾 {{ _('Kaydet') }}</button>
+    {% else %}
+    <button type="submit" name="action" value="confirm">💾 {{ _('Kaydet ve Garmin/Strava\'yı güncelle') }}</button>
+    {% endif %}
+  </div>
+  {% if workout.status == 'draft' %}
+  <div style="margin-top: var(--space-3);">
+    <button type="submit" name="action" value="discard" class="ghost" style="color: var(--danger);"
+            data-confirm="{{ _('Bu taslak silinsin mi? Saatteki kayıt etkilenmez.') }}" onclick="return confirm(this.dataset.confirm);">{{ _('Taslağı sil') }}</button>
+  </div>
+  {% endif %}
+</form>
+
+<div style="margin-top: var(--space-5);"><a href="/strength">← {{ _('Kuvvet antrenmanları') }}</a></div>
+{% endblock %}

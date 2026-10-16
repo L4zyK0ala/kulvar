@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import requests
 from sqlalchemy.orm import Session
 
+from ..clock import utcnow
 from ..config import settings
 from ..models import Activity, BodyMeasurement, Credential, Profile
 from . import SyncResult, register_connect, register_sync
@@ -135,7 +136,7 @@ def sync(profile: Profile, db: Session, credential: Credential, payload: dict) -
     if not api_key:
         return SyncResult("error", "Hevy API key eksik.")
 
-    cutoff = dt.datetime.utcnow() - dt.timedelta(days=settings.sync_lookback_days)
+    cutoff = utcnow() - dt.timedelta(days=settings.sync_lookback_days)
     added = 0
     page = 1
 
@@ -194,6 +195,25 @@ def sync(profile: Profile, db: Session, credential: Credential, payload: dict) -
         return SyncResult("error", f"Hevy senkronizasyon hatası: {exc}")
 
     measurements_added, measurements_error = _sync_body_measurements(profile, db, api_key)
+
+    from .. import workout_library
+
+    if workout_library.needs_refresh(profile):  # rutinler ve hareket görselleri günde bir
+        try:
+            workout_library.refresh_routines(db, profile, api_key)
+        except Exception:  # noqa: BLE001 - rutin yenilemesi senkronu bozmasın
+            db.rollback()
+            logger.exception("Hevy rutinleri yenilenemedi")
+
+    from .. import strength_log
+
+    try:  # Kulvar'ın kendi kuvvet kaydı: Hevy antrenmanlarının kopyası (ilk gün tüm geçmiş)
+        if strength_log.history_due(profile):
+            strength_log.import_hevy_history(db, profile, api_key)
+        strength_log.mirror_hevy(db, profile)
+    except Exception:  # noqa: BLE001 - kopyalama senkronu bozmasın
+        db.rollback()
+        logger.exception("Hevy antrenmanları Kulvar kaydına aktarılamadı")
 
     message = f"{added} kuvvet antrenmanı, {measurements_added} vücut ölçümü senkronize edildi."
     if measurements_error:

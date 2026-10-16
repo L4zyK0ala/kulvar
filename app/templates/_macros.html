@@ -75,7 +75,7 @@
 
 
 {% macro source_badge(source) %}
-{% set labels = {'garmin': 'Garmin', 'strava': 'Strava', 'hevy': 'Hevy', 'mfp': 'MyFitnessPal'} %}
+{% set labels = {'garmin': 'Garmin', 'strava': 'Strava', 'hevy': 'Hevy', 'mfp': 'MyFitnessPal', 'kulvar': 'Kulvar'} %}
 <span class="badge badge-source {{ source }}">{{ labels.get(source, source) }}</span>
 {% endmacro %}
 
@@ -120,5 +120,43 @@
 <form method="post" action="/language" class="lang-switch">
   <input type="hidden" name="lang" value="{{ other }}" />
   <button type="submit" class="ghost" title="{{ LANGS[other] }}" aria-label="{{ LANGS[other] }}">{{ other|upper }}</button>
+</form>
+{% endmacro %}
+
+{% macro exercise_grid(exercises) %}
+  <div class="exercise-grid">
+    {% for e in exercises %}
+    <div class="exercise-card">
+      <div class="exercise-media">
+        {% if e.frames|length >= 2 %}<img src="/static/{{ e.frames[0] }}" alt="" loading="lazy" /><img class="frame-b" src="/static/{{ e.frames[1] }}" alt="" loading="lazy" />
+        {% elif e.frames %}<img src="/static/{{ e.frames[0] }}" alt="" loading="lazy" />
+        {% elif e.thumbnail %}<img src="{{ e.thumbnail }}" alt="" loading="lazy" referrerpolicy="no-referrer" />
+        {% else %}<span class="exercise-placeholder">🏋️</span>{% endif %}
+      </div>
+      <div class="exercise-body">
+        <strong>{{ e.title }}</strong>
+        <div class="metric-caption" style="margin:2px 0 0;">{{ e.sets }}{% if e.rest %} · {{ _('dinlenme') }} {{ e.rest }} {{ _('sn') }}{% endif %}{% if e.muscle %} · {{ e.muscle|replace('_', ' ') }}{% endif %}{% if e.garmin %} · ⌚{% endif %}</div>
+        {% if e.notes %}<div class="metric-caption" style="margin:2px 0 0;">{{ e.notes }}</div>{% endif %}
+        {% if e.instructions %}<details><summary class="metric-caption" style="cursor:pointer;">{{ _('Nasıl yapılır') }}</summary><ol class="exercise-steps">{% for step in e.instructions %}<li>{{ step }}</li>{% endfor %}</ol></details>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="metric-caption" style="margin-top: 6px;">{{ _('⌚ işaretli hareketler Garmin\'e hareket adımı olarak gider; saat antrenmanda animasyonunu gösterir ve tekrar sayar. Görseller: free-exercise-db (kamu malı).') }}</div>
+{% endmacro %}
+
+{% macro rpe_widget(rpe, back) %}
+{% set fb = rpe.fb %}
+<form method="post" action="/feedback/{{ active_profile.id }}" class="card rpe-form" id="rpe">
+  <input type="hidden" name="kind" value="{{ rpe.kind }}" /><input type="hidden" name="obj_id" value="{{ rpe.id }}" /><input type="hidden" name="back" value="{{ back }}" />
+  <div class="metric-label" style="margin:0 0 8px;">{{ _('Nasıl hissettirdi?') }}{% if fb and fb.rpe %} · <span style="color: var(--text-primary);">{{ fb.rpe }}/10</span>{% endif %}</div>
+  <div class="rpe-scale">
+    {% for n in range(1, 11) %}<button type="submit" name="rpe" value="{{ n }}" class="rpe-btn{{ ' on' if fb and fb.rpe == n }}" style="--rpe: {{ n }};">{{ n }}</button>{% endfor %}
+  </div>
+  <div class="rpe-legend"><span>{{ _('çok kolay') }}</span><span>{{ _('orta') }}</span><span>{{ _('maksimum') }}</span></div>
+  <div style="display:flex; gap:8px; margin-top: 8px;">
+    <input type="text" name="note" value="{{ fb.note if fb and fb.note else '' }}" maxlength="300" placeholder="{{ _('Not (isteğe bağlı): ör. sol diz hafif, nefes zorladı') }}" style="flex:1; min-width:0;" />
+    <button type="submit" name="rpe" value="" class="secondary">{{ _('Kaydet') }}</button>
+  </div>
 </form>
 {% endmacro %}

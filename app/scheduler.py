@@ -9,6 +9,7 @@ import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from .clock import utcnow
 from .config import settings
 from .crypto import decrypt_payload
 from .db import SessionLocal
@@ -60,7 +61,13 @@ def sync_credential(db, credential: Credential) -> None:
         logger.exception("Senkronizasyon hatası: profile=%s source=%s", credential.profile_id, credential.source)
         credential.last_sync_status = "error"
         credential.last_sync_message = str(exc)
-    credential.last_synced_at = dt.datetime.utcnow()
+    credential.last_synced_at = utcnow()
+    try:
+        from . import alerts
+
+        alerts.sync_result(db, credential)
+    except Exception:  # noqa: BLE001 - uyarı hatası senkron kaydını engellemesin
+        logger.exception("Senkron uyarısı işlenemedi")
     db.add(credential)
     db.commit()
 
@@ -110,7 +117,78 @@ def _evening_check() -> None:
     run_evening_check()
 
 
+def _medication_reminders() -> None:
+    from .meds import run_reminders  # döngüsel import olmasın diye geç import
+
+    try:
+        run_reminders()
+    except Exception:  # noqa: BLE001 - bir hata sonraki dakikayı engellemesin
+        logger.exception("İlaç hatırlatmaları gönderilemedi")
+
+
+def _backup() -> None:
+    from . import backup
+
+    try:
+        backup.run_backup()
+    except Exception:  # noqa: BLE001 - run_backup hatayı kaydedip bildirdi
+        pass
+
+
+def _morning_check() -> None:
+    from . import morning
+
+    try:
+        morning.run()
+    except Exception:  # noqa: BLE001
+        logger.exception("Sabah hazırlık kontrolü başarısız")
+
+
+def _stale_sync_check() -> None:
+    from . import alerts
+
+    try:
+        alerts.check_stale()
+    except Exception:  # noqa: BLE001
+        logger.exception("Askıda kalan senkron kontrolü başarısız")
+
+
 def start_scheduler() -> None:
+    from . import backup
+
+    _scheduler.add_job(
+        _backup,
+        CronTrigger(hour=backup.BACKUP_HOUR, minute=0, timezone=settings.local_timezone),
+        id="backup",
+        replace_existing=True,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+    if backup.is_stale():  # makine o saatte kapalıydıysa ya da hiç yedek yoksa: açılıştan 2 dk sonra
+        _scheduler.add_job(_backup, "date", run_date=utcnow() + dt.timedelta(minutes=2), id="backup_catchup",
+                           replace_existing=True)
+    from . import labs
+
+    # değeri çıkarılmamış kan tahlilleri (ilk kurulum ve yarıda kalan çıkarımlar) açılıştan 1 dk sonra taranır
+    _scheduler.add_job(labs.backfill, "date", run_date=utcnow() + dt.timedelta(minutes=1),
+                       id="labs_backfill", replace_existing=True)
+    _scheduler.add_job(  # gece verisi senkronlanınca (06–11 arası) profil başına bir kez
+        _morning_check,
+        "interval",
+        minutes=20,
+        id="morning_check",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+    _scheduler.add_job(
+        _stale_sync_check,
+        "interval",
+        hours=1,
+        id="stale_sync_check",
+        replace_existing=True,
+        coalesce=True,
+    )
     _scheduler.add_job(
         _evening_check,
         CronTrigger(hour=settings.evening_check_hour, minute=0, timezone=settings.local_timezone),
@@ -120,12 +198,21 @@ def start_scheduler() -> None:
         misfire_grace_time=1800,  # servis o an yeniden başlıyorsa 30 dk içinde yine çalışsın
     )
     _scheduler.add_job(
+        _medication_reminders,
+        "interval",
+        minutes=1,
+        id="medication_reminders",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+    _scheduler.add_job(
         sync_all,
         "interval",
         minutes=settings.sync_interval_minutes,
         id="sync_all",
         replace_existing=True,
-        next_run_time=dt.datetime.utcnow(),
+        next_run_time=utcnow(),
     )
     _scheduler.start()
 

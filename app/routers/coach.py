@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -8,12 +9,12 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..activity_display import activity_label, format_duration, format_pace, group_activities, is_running
-from .. import health, i18n, training
+from .. import coach_memory, feedback, health, heart, i18n, labs, meds, morning, routine_builder, strength_log, training, workout_library
 from ..crypto import decrypt_payload
 from ..db import get_db
 from ..deps import get_current_profile
 from ..integrations import garmin as garmin_integration
-from ..models import Activity, BodyMeasurement, Credential, DailyMetric, HealthRecord, NutritionLog, PlannedWorkout, Profile, Race
+from ..models import Activity, BodyMeasurement, Credential, DailyMetric, HealthRecord, Medication, NutritionLog, PlannedWorkout, Profile, Race
 from ..streams import compute_decoupling, compute_splits, find_sibling_with_stream, gpx_metrics, load_stream_data
 from ..templating import templates
 
@@ -59,8 +60,8 @@ def _parse_plan_date(raw: str) -> dt.date | None:
     return None
 
 
-def parse_plan_text(text: str) -> tuple[list[dict], int]:
-    """Claude'un pipe-delimited plan yanıtını (TARIH | TIP | BAŞLIK | MESAFE_KM | SURE_DK | NOT)
+def parse_plan_text(text: str, profile: Profile | None = None) -> tuple[list[dict], int]:
+    """Claude'un pipe-delimited plan yanıtını (TARIH | TIP | BAŞLIK | MESAFE_KM | SURE_DK | NOT | NABIZ)
     PlannedWorkout alanlarına çevirir. (satırlar, atlanan_satır_sayısı) döner."""
     rows: list[dict] = []
     skipped = 0
@@ -95,6 +96,7 @@ def parse_plan_text(text: str) -> tuple[list[dict], int]:
                 duration_min = None
 
         notes = parts[5] if len(parts) > 5 and parts[5] else None
+        hr_min, hr_max = heart.resolve_hr(parts[6], profile) if len(parts) > 6 else (None, None)
 
         rows.append(
             {
@@ -104,9 +106,35 @@ def parse_plan_text(text: str) -> tuple[list[dict], int]:
                 "target_distance_m": distance_km * 1000 if distance_km else None,
                 "target_duration_s": duration_min * 60 if duration_min else None,
                 "notes": notes,
+                "target_hr_min": hr_min,
+                "target_hr_max": hr_max,
             }
         )
     return rows, skipped
+
+
+_HR_TARGET = re.compile(r"^\s*(\d{2,3})\s*(?:[-–]\s*(\d{2,3}))?\s*(?:bpm)?\s*$", re.I)
+
+
+def parse_hr_target(raw: str) -> tuple[int | None, int | None]:
+    """NABIZ alanı: "155" (yalnız tavan) ya da "120-155" (aralık). Geçersizse (None, None)."""
+    m = _HR_TARGET.match(raw or "")
+    if not m:
+        return None, None
+    a, b = int(m.group(1)), int(m.group(2)) if m.group(2) else None
+    lo, hi = (None, a) if b is None else (min(a, b), max(a, b))
+    if not 60 <= hi <= 220 or (lo is not None and (lo < 40 or hi - lo < 5)):
+        return None, None
+    return lo, hi
+
+
+def hr_target_label(workout) -> str:
+    """Plan kartlarında gösterilen nabız hedefi: "♥ ≤155" ya da "♥ 120–155"."""
+    if not workout.target_hr_max:
+        return ""
+    if workout.target_hr_min:
+        return f"♥ {workout.target_hr_min}–{workout.target_hr_max}"
+    return f"♥ ≤{workout.target_hr_max}"
 
 
 def extract_plan_lines(text: str) -> list[str]:
@@ -271,6 +299,8 @@ def _build_brief_markdown(
                 bits.append(f"{w.target_distance_m / 1000:g} km")
             if w.target_duration_s:
                 bits.append(f"{int(w.target_duration_s // 60)} dk")
+            if w.target_hr_max:
+                bits.append("nabız " + hr_target_label(w).replace("♥ ", ""))
             line = " · ".join(bits)
             if w.notes:
                 line += f" — {w.notes}"
@@ -371,11 +401,13 @@ def _build_brief_markdown(
         "FORMATTA ver (alanları \"|\" ile ayır, tarih YYYY-AA-GG formatında olsun):"
     )
     lines.append("")
-    lines.append("TARIH | TIP | BAŞLIK | MESAFE_KM | SURE_DK | NOT")
+    lines.append("TARIH | TIP | BAŞLIK | MESAFE_KM | SURE_DK | NOT | NABIZ")
     lines.append("")
     lines.append("- TIP şunlardan biri olmalı: running, cycling, walking, swimming, strength, other")
     lines.append("- MESAFE_KM veya SURE_DK'dan en az biri dolu olsun (ikisi de olabilir), gerekmeyeni boş bırak")
     lines.append("- Dinlenme günü için TIP=other, MESAFE_KM ve SURE_DK boş, NOT'a \"dinlenme\" yaz")
+    lines.append("- NABIZ: koşu/yürüyüş/bisiklet için nabız hedefi: bölge \"Z2\" (tavan) ya da \"Z3-Z4\" (aralık), veya bpm "
+                 "\"155\" / \"120-155\"; Garmin saati bu aralığın dışına çıkınca uyarır. Hedef yoksa boş bırak")
     lines.append(
         "- BAŞLIK kısa ve İngilizce olsun, \"[Weekday] [Intensity]\" kalıbında yaz (antrenmanın "
         "tarihine karşılık gelen İngilizce gün adı + kısa bir yoğunluk ifadesi, ör. Monday Easy, "
@@ -444,7 +476,7 @@ def build_profile_brief(db: Session, profile: Profile, include_prompt: bool = Tr
         latest_measurement,
         recent_activities=recent,
         upcoming=upcoming,
-        health_lines=training.brief_lines(db, profile) + plan_status_lines(db, profile) + health.brief_lines(db, profile),
+        health_lines=training.brief_lines(db, profile) + heart.brief_lines(profile) + plan_status_lines(db, profile) + health.brief_lines(db, profile) + meds.brief_lines(db, profile) + workout_library.brief_lines(db, profile) + strength_log.brief_lines(db, profile) + feedback.brief_lines(db, profile) + morning.brief_lines(db, profile) + labs.brief_lines(db, profile) + coach_memory.brief_lines(profile),
         include_prompt=include_prompt,
     )
 
@@ -470,6 +502,8 @@ def _chat_context(db: Session, profile: Profile, lang: str = "tr") -> dict:
         "chat_usage": coach_chat.usage_summary(db),
         "chat_month_profile_usd": coach_chat.month_cost(db, profile.id),
         "coach_instructions": profile.coach_instructions or "",
+        "pending_revisions": coach_memory.pending(db, profile),
+        "revision_history": coach_memory.history(db, profile),
     }
 
 @router.get("/coach-brief")
@@ -507,6 +541,9 @@ def coach_brief(
             "today": today,
             "upcoming": upcoming,
             "workout_type_labels": WORKOUT_TYPE_LABELS,
+            "strength_views": _strength_views(db, upcoming, request.state.lang),
+            "routine_options": workout_library.routines(db, current.id),
+            **_routine_builder_context(db, current, request.state.lang),
             "has_garmin": has_garmin,
             "plan_added": plan_added,
             "plan_pushed": plan_pushed,
@@ -518,6 +555,15 @@ def coach_brief(
             "health_items": health.schedule_status(db, current),
             "health_records": db.query(HealthRecord).filter(HealthRecord.profile_id == current.id, HealthRecord.kind.isnot(None)).order_by(HealthRecord.created_at.desc()).all(),
             "health_kinds": health.KIND_LABELS,
+            "record_files": health.record_files,
+            "medications": [
+                {"med": m, "times": meds.times_of(m), "days": meds.days_of(m), "adherence": meds.adherence(db, m)}
+                for m in db.query(Medication).filter(Medication.profile_id == current.id)
+                .order_by(Medication.status == "stopped", Medication.kind.desc(), Medication.name).all()
+            ],
+            "med_kinds": meds.KINDS, "med_statuses": meds.STATUSES, "med_verdicts": meds.VERDICTS,
+            "labs": labs.view(db, current.id, request.state.lang),
+            "notice": request.query_params.get("notice"),
         },
     )
 
@@ -538,6 +584,76 @@ def replace_existing_plans(db: Session, profile_id: str, dates: set[dt.date], ga
     return removed
 
 
+def _strength_views(db: Session, workouts: list[PlannedWorkout], lang: str = "tr") -> dict:
+    """Kuvvet günleri için {plan id: {"routine": rutin, "exercises": [...]}} (rutin yoksa routine=None)."""
+    out = {}
+    for w in workouts:
+        if w.workout_type == "strength":
+            routine = workout_library.routine_for_plan(db, w)
+            out[w.id] = {"routine": routine, "exercises": workout_library.routine_view(db, routine, lang) if routine else []}
+    return out
+
+
+@router.post("/coach-brief/{profile_id}/plan/{workout_id}/routine")
+def set_plan_routine(profile_id: str, workout_id: str, routine_id: str = Form(""), db: Session = Depends(get_db)):
+    """Kuvvet gününün Hevy rutinini değiştirir; Garmin'deyse antrenmanı yeni hareketlerle günceller."""
+    workout = db.get(PlannedWorkout, workout_id)
+    if workout is not None and workout.profile_id == profile_id and workout.workout_type == "strength":
+        workout.routine_id = routine_id or None
+        db.commit()
+        if workout.garmin_workout_id:
+            credential = db.query(Credential).filter(Credential.profile_id == profile_id, Credential.source == "garmin").first()
+            if credential is not None:
+                workout.garmin_error = garmin_integration.update_strength_routine(decrypt_payload(credential.encrypted_payload), workout)
+                db.commit()
+    return RedirectResponse(f"/coach-brief?profile={profile_id}#plan-{workout_id}", status_code=303)
+
+
+def _routine_builder_context(db: Session, profile: Profile, lang: str = "tr") -> dict:
+    draft = routine_builder.latest_draft(db, profile.id)
+    return {
+        "routine_draft": draft,
+        "routine_draft_view": routine_builder.view(db, draft, lang),
+        "routine_params": routine_builder.last_params(db, profile),
+        "routine_equipment": routine_builder.EQUIPMENT,
+        "has_hevy": routine_builder.hevy_key(db, profile.id) is not None,
+        "routine_to_kulvar": routine_builder.hevy_key(db, profile.id) is None or strength_log.source_of(db, profile) == "kulvar",
+    }
+
+
+@router.post("/coach-brief/{profile_id}/routines/generate")
+def generate_routines(
+    profile_id: str,
+    days: int = Form(3),
+    minutes: int = Form(30),
+    equipment: list[str] = Form([]),
+    weights: str = Form(""),
+    prefix: str = Form(""),
+    notes: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Koça (arka planda) Hevy kataloğundan rutin taslağı hazırlatır."""
+    profile = db.get(Profile, profile_id)
+    if profile is not None:
+        routine_builder.start(db, profile, routine_builder.clean_params(profile, days, minutes, equipment, weights, prefix, notes))
+    return RedirectResponse(f"/coach-brief?profile={profile_id}&tab=hedefler#rutinler", status_code=303)
+
+
+@router.post("/coach-brief/{profile_id}/routines/{draft_id}/{action}")
+def routine_draft_action(profile_id: str, draft_id: str, action: str, db: Session = Depends(get_db)):
+    """Taslağı Hevy'ye kaydet (save) ya da at (discard)."""
+    from ..models import RoutineDraft
+
+    draft = db.get(RoutineDraft, draft_id)
+    if draft is not None and draft.profile_id == profile_id:
+        if action == "save":
+            routine_builder.save_in_background(db, draft)
+        elif action == "discard" and draft.status not in ("running", "saving"):
+            draft.status = "discarded"
+            db.commit()
+    return RedirectResponse(f"/coach-brief?profile={profile_id}&tab=hedefler#rutinler", status_code=303)
+
+
 def _targets_context(db: Session, profile: Profile, today: dt.date, lang: str = "tr") -> dict:
     start = training.week_start(today)
     week = training.week_status(db, profile, start, today)
@@ -555,6 +671,10 @@ def _targets_context(db: Session, profile: Profile, today: dt.date, lang: str = 
         "week_template_text": training.template_text(training.week_template(profile), lang),
         "day_kinds": training.DAY_KINDS,
         "race_phase": phase,
+        "lthr_zones": heart.lthr_zones(profile.lthr),
+        "garmin_zones": heart.garmin_zones(profile),
+        "garmin_zone_method": heart.garmin_zone_method(profile),
+        "zone_label": heart.zone_label,
         "race_phase_text": training.phase_text(phase, lang) if phase else "",
         "races": db.query(Race).filter(Race.profile_id == profile.id, Race.date >= today - dt.timedelta(days=60))
         .order_by(Race.date.asc()).all(),
@@ -574,6 +694,35 @@ async def save_week_template(profile_id: str, request: Request, db: Session = De
         except ValueError:
             pass
     return RedirectResponse(f"/coach-brief?profile={profile_id}&tab=hedefler", status_code=303)
+
+
+@router.post("/coach-brief/{profile_id}/heart")
+def save_heart_profile(profile_id: str, lthr: str = Form(""), db: Session = Depends(get_db)):
+    """Elle LTHR girer; boş bırakılırsa Garmin'den gelen değere döner."""
+    profile = db.get(Profile, profile_id)
+    if profile is not None:
+        value = lthr.strip()
+        if value.isdigit() and 100 <= int(value) <= 220:
+            profile.lthr, profile.lthr_date, profile.hr_profile_source = int(value), dt.date.today(), "manual"
+        elif not value:
+            profile.hr_profile_source, profile.hr_profile_updated_at = "garmin", None  # sıradaki senkronda Garmin'den
+        db.commit()
+    return RedirectResponse(f"/coach-brief?profile={profile_id}&tab=hedefler#nabiz", status_code=303)
+
+
+@router.post("/coach-brief/{profile_id}/heart/refresh")
+def refresh_heart_profile(profile_id: str, db: Session = Depends(get_db)):
+    """LTHR'yi ve saatteki bölgeleri hemen Garmin'den çeker (elle girilmiş LTHR'yi de Garmin'inkiyle değiştirir)."""
+    profile = db.get(Profile, profile_id)
+    credential = db.query(Credential).filter(Credential.profile_id == profile_id, Credential.source == "garmin").first()
+    if profile is not None and credential is not None:
+        profile.hr_profile_source = "garmin"
+        try:
+            client = garmin_integration._login_from_payload(decrypt_payload(credential.encrypted_payload))
+            heart.refresh_from_garmin(client, profile, db)
+        except Exception:  # noqa: BLE001 - Garmin'e ulaşılamazsa sayfa yine açılsın
+            pass
+    return RedirectResponse(f"/coach-brief?profile={profile_id}&tab=hedefler#nabiz", status_code=303)
 
 
 @router.post("/coach-brief/{profile_id}/race")
@@ -616,7 +765,8 @@ def add_planned_workouts_bulk(
     replace: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
-    rows, skipped = parse_plan_text(plan_text)
+    owner = db.get(Profile, profile_id)
+    rows, skipped = parse_plan_text(plan_text, owner)
 
     credential = (
         db.query(Credential)
@@ -630,6 +780,7 @@ def add_planned_workouts_bulk(
     pushed = 0
     for row in rows:
         workout = PlannedWorkout(profile_id=profile_id, **row)
+        workout.profile = owner  # Garmin hedefinin alt sınırı kişinin saat bölgelerinden
         if payload is not None and row["workout_type"] in _GARMIN_PUSHABLE_TYPES:
             workout_id, error = garmin_integration.push_planned_workout(payload, workout)
             workout.garmin_workout_id = workout_id

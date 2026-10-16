@@ -30,6 +30,15 @@ Open `http://127.0.0.1:8010` and pick a demo profile. You don't need any Garmin,
 
 The SQLite schema is created on startup. When you add a column to a model, also add it to `_ensure_columns()` in `app/db.py`, so that existing databases get it too.
 
+## Tests
+
+```bash
+venv/bin/pip install -r requirements-dev.txt
+venv/bin/python -m pytest
+```
+
+The tests use a temporary SQLite database and fakes for Claude, Telegram, Garmin and Hevy, so they never call a real service and don't need a `.env`. They also run the translation check and open every page in both languages. GitHub Actions runs them on every push and pull request.
+
 ## Code style
 
 - **Match the surrounding code:** naming, structure and comment density. Comments and docstrings in the code base are mostly Turkish; English is fine for new code.
@@ -58,6 +67,6 @@ Adding a new language means a new catalog in `app/locales/` plus an entry in `LA
 - Keep each pull request to one topic.
 - Describe what changed and how you tested it.
 - For UI changes, add a screenshot made with demo data.
-- Make sure `scripts/check_i18n.py` passes and the pages you touched load in both languages.
+- Make sure `python -m pytest` passes. When you fix a bug, add a test that fails without the fix.
 
 By contributing, you agree that your contribution is licensed under the [MIT License](LICENSE).

@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% block title %}{{ workout.title }} — Kulvar{% endblock %}
+{% block content %}
+
+<div class="live">
+  <div class="live-head">
+    <div style="min-width:0;">
+      <div class="live-title">{{ workout.title }}</div>
+      <div class="metric-caption" style="margin:0;"><span id="live-elapsed">0:00</span> · <span id="live-progress"></span><span id="live-sync"></span></div>
+    </div>
+    <div class="live-toggles">
+      <button type="button" id="tg-sound" class="ghost" title="{{ _('Ses') }}" aria-label="{{ _('Ses') }}">🔊</button>
+      <button type="button" id="tg-notify" class="ghost" title="{{ _('Bildirim izni') }}" aria-label="{{ _('Bildirim izni') }}" hidden>🔔</button>
+    </div>
+  </div>
+  {% if request.query_params.get('empty') %}<div class="card" style="margin-bottom: var(--space-3); color: var(--danger);">{{ _('Henüz hiç set işaretlemedin; bitirmeden önce yaptığın setleri ✓ ile işaretle.') }}</div>{% endif %}
+
+  <div class="live-nav" id="live-nav"></div>
+  <div id="live-ex"></div>
+
+  <div class="live-rest" id="live-rest" hidden>
+    <div class="metric-label" id="rest-label" style="margin:0;">{{ _('Dinlenme') }}</div>
+    <div class="live-rest-time" id="rest-time">0:00</div>
+    <div class="metric-caption" id="rest-next" style="margin:0 0 10px;"></div>
+    <div style="display:flex; gap:8px; justify-content:center;">
+      <button type="button" class="secondary" data-rest="-15">−15</button>
+      <button type="button" class="secondary" data-rest="15">+15</button>
+      <button type="button" id="rest-skip">{{ _('Atla') }}</button>
+    </div>
+  </div>
+
+  <form method="post" action="/strength/live/{{ workout.id }}/finish" style="margin-top: var(--space-5);">
+    <button type="submit" style="width:100%;" data-confirm="{{ _('Antrenman bitsin mi? İşaretlenmeyen setler kaydedilmez.') }}" onclick="return confirm(this.dataset.confirm);">🏁 {{ _('Antrenmanı bitir') }}</button>
+  </form>
+  <form method="post" action="/strength/live/{{ workout.id }}/discard" style="margin-top: var(--space-3); text-align:center;">
+    <button type="submit" class="ghost" style="color: var(--danger);" data-confirm="{{ _('Bu antrenman silinsin mi? Hiçbir şey kaydedilmez.') }}" onclick="return confirm(this.dataset.confirm);">{{ _('Vazgeç ve sil') }}</button>
+  </form>
+</div>
+
+<script>
+(() => {
+  const STATE = {{ state | tojson }};
+  const API = '/strength/live/{{ workout.id }}/api';
+  const T = {{ {
+    'set': _('set'), 'reps': _('tekrar'), 'sec': _('sn'), 'prev': _('önceki'), 'add_set': _('Set ekle'),
+    'prev_ex': _('Önceki'), 'next_ex': _('Sonraki'), 'rest': _('Dinlenme'), 'ready': _('Hazır! Sıradaki set'),
+    'next': _('Sıradaki'), 'done_all': _('Bütün setler tamam; antrenmanı bitirebilirsin.'), 'how': _('Nasıl yapılır'),
+    'saved': _('kaydedildi'), 'saving': _('kaydediliyor…'), 'offline': _('kaydedilemedi, tekrar deneniyor'),
+    'start_timer': _('Başlat'), 'warmup': _('Isınma'), 'notif': _('Dinlenme bitti'),
+  } | tojson }};
+  const ex = STATE.exercises;
+  const store = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+                  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+  let cur = Math.max(0, ex.findIndex((e) => e.sets.some((s) => !s.done)));
+  let sound = store.get('live-sound', true);
+  let restEnd = null, restTimer = null, workTimer = null, audio = null, wakeLock = null;
+
+  // ------------------------------------------------------------------ kayıt
+  let pending = 0;
+  const syncEl = document.getElementById('live-sync');
+  const showSync = (text) => { syncEl.textContent = text ? ` · ${text}` : ''; };
+  async function post(body, tries = 4) {
+    pending++; showSync(T.saving);
+    for (let i = 0; i < tries; i++) {
+      try {
+        const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (r.ok) { pending--; showSync(pending ? T.saving : T.saved); return await r.json(); }
+      } catch (e) { /* ağ hatası: tekrar dene */ }
+      showSync(T.offline);
+      await new Promise((res) => setTimeout(res, 1500 * (i + 1)));
+    }
+    pending--; showSync(T.offline); return null;
+  }
+  const saveSet = (s) => post({ op: 'set', set_id: s.id, reps: s.reps, kg: s.kg, sec: s.sec, done: s.done });
+
+  // ------------------------------------------------------------------ ses, titreşim, ekran
+  function unlock() {
+    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    if (audio && audio.state === 'suspended') audio.resume();
+    keepAwake();
+  }
+  function beep(times = 3) {
+    if (navigator.vibrate) navigator.vibrate([300, 120, 300, 120, 300]);
+    if (!sound || !audio) return;
+    for (let i = 0; i < times; i++) {
+      const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime + i * 0.35;
+      o.frequency.value = i === times - 1 ? 1320 : 880; o.connect(g); g.connect(audio.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.4, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      o.start(t); o.stop(t + 0.3);
+    }
+  }
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); tickRest(); } });
+  function notify(text) {
+    if (document.visibilityState === 'visible' || !('Notification' in window) || Notification.permission !== 'granted') return;
+    try { new Notification(T.notif, { body: text, tag: 'kulvar-rest' }); } catch (e) {}
+  }
+
+  // ------------------------------------------------------------------ dinlenme sayacı
+  const restBox = document.getElementById('live-rest'), restTime = document.getElementById('rest-time');
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.max(0, Math.floor(s % 60))).padStart(2, '0')}`;
+  function nextLabel() {
+    for (let i = cur; i < ex.length; i++) {
+      const n = ex[i].sets.findIndex((s) => !s.done);
+      if (n >= 0) {
+        const s = ex[i].sets[n];
+        const v = ex[i].timed ? `${s.sec || ''} ${T.sec}` : `${s.reps ?? ''}${s.kg ? ` × ${s.kg} kg` : ''}`;
+        return `${ex[i].title} · ${n + 1}. ${T.set}: ${v}`;
+      }
+    }
+    return '';
+  }
+  function startRest(seconds) {
+    const label = nextLabel();
+    if (!label) return;  // son set: dinlenme yok
+    restEnd = Date.now() + seconds * 1000;
+    document.getElementById('rest-label').textContent = T.rest;
+    document.getElementById('rest-next').textContent = `${T.next}: ${label}`;
+    restBox.hidden = false;
+    clearInterval(restTimer); restTimer = setInterval(tickRest, 250); tickRest();
+  }
+  function tickRest() {
+    if (!restEnd) return;
+    const left = (restEnd - Date.now()) / 1000;
+    restTime.textContent = fmt(Math.ceil(left));
+    if (left <= 0) {
+      clearInterval(restTimer); restEnd = null;
+      beep(); notify(document.getElementById('rest-next').textContent);
+      document.getElementById('rest-label').textContent = T.ready;
+      restTime.textContent = '0:00';
+      setTimeout(() => { if (!restEnd) restBox.hidden = true; }, 4000);
+    }
+  }
+  function endRest() {
+    clearInterval(restTimer); restEnd = null; restBox.hidden = true;
+  }
+  document.getElementById('rest-skip').addEventListener('click', () => endRest());
+  restBox.querySelectorAll('[data-rest]').forEach((b) => b.addEventListener('click', () => {
+    if (!restEnd) return;
+    restEnd += Number(b.dataset.rest) * 1000;
+    tickRest();
+  }));
+
+  // ------------------------------------------------------------------ ekran
+  const nav = document.getElementById('live-nav'), box = document.getElementById('live-ex');
+  function progress() {
+    const all = ex.flatMap((e) => e.sets), done = all.filter((s) => s.done).length;
+    document.getElementById('live-progress').textContent = `${done}/${all.length} ${T.set}`;
+  }
+  function renderNav() {
+    nav.innerHTML = '';
+    ex.forEach((e, i) => {
+      const b = document.createElement('button');
+      const done = e.sets.filter((s) => s.done).length;
+      b.type = 'button'; b.className = 'live-pill' + (i === cur ? ' active' : '') + (done === e.sets.length ? ' done' : '');
+      b.textContent = `${done === e.sets.length ? '✓ ' : ''}${e.warmup ? T.warmup : e.title}`;
+      b.addEventListener('click', () => { cur = i; render(); });
+      nav.appendChild(b);
+    });
+    const active = nav.querySelector('.active'); if (active) active.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }
+  function el(tag, attrs = {}, text = '') {
+    const n = document.createElement(tag);
+    Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v));
+    if (text) n.textContent = text;
+    return n;
+  }
+  function render() {
+    renderNav(); progress();
+    const e = ex[cur];
+    box.innerHTML = '';
+    const card = el('div', { class: 'card live-card' });
+    const media = el('div', { class: 'live-media' });
+    if (e.frames.length) {
+      media.appendChild(el('img', { src: '/static/' + e.frames[0], alt: '' }));
+      if (e.frames[1]) media.appendChild(el('img', { src: '/static/' + e.frames[1], alt: '', class: 'frame-b' }));
+    } else media.appendChild(el('span', { class: 'exercise-placeholder' }, e.warmup ? '🔥' : '🏋️'));
+    card.appendChild(media);
+    card.appendChild(el('h2', { class: 'live-ex-title' }, e.title));
+    if (e.notes) card.appendChild(el('div', { class: 'metric-caption', style: 'margin:0 0 8px;' }, e.notes));
+    if (e.instructions.length) {
+      const d = el('details'); d.appendChild(el('summary', { class: 'metric-caption', style: 'cursor:pointer;' }, T.how));
+      const ol = el('ol', { class: 'exercise-steps' }); e.instructions.forEach((s) => ol.appendChild(el('li', {}, s)));
+      d.appendChild(ol); card.appendChild(d);
+    }
+    e.sets.forEach((s, n) => card.appendChild(setRow(e, s, n)));
+    if (!e.warmup) {
+      const add = el('button', { type: 'button', class: 'secondary set-add' }, '+ ' + T.add_set);
+      add.addEventListener('click', async () => {
+        unlock();
+        const r = await post({ op: 'add_set', position: e.position });
+        if (r && r.set) { e.sets.push(r.set); render(); }
+      });
+      card.appendChild(add);
+    }
+    const navRow = el('div', { class: 'live-step' });
+    const prev = el('button', { type: 'button', class: 'secondary' }, '← ' + T.prev_ex);
+    const next = el('button', { type: 'button' }, T.next_ex + ' →');
+    prev.disabled = cur === 0; next.disabled = cur === ex.length - 1;
+    prev.addEventListener('click', () => { cur--; render(); window.scrollTo(0, 0); });
+    next.addEventListener('click', () => { cur++; render(); window.scrollTo(0, 0); });
+    navRow.append(prev, next); card.appendChild(navRow);
+    if (ex.every((x) => x.sets.every((s) => s.done))) card.appendChild(el('div', { class: 'metric-caption', style: 'margin-top:10px; color: var(--success);' }, T.done_all));
+    box.appendChild(card);
+  }
+  function numInput(value, step, cls, onChange) {
+    const i = el('input', { type: 'number', min: '0', step, inputmode: step === '1' ? 'numeric' : 'decimal', class: cls });
+    if (value !== null && value !== undefined) i.value = value;
+    i.addEventListener('change', () => onChange(i.value === '' ? null : Number(i.value)));
+    return i;
+  }
+  function setRow(e, s, n) {
+    const row = el('div', { class: 'live-set' + (s.done ? ' done' : '') });
+    row.appendChild(el('span', { class: 'set-no' }, e.warmup ? '🔥' : String(n + 1)));
+    const fields = el('div', { class: 'live-fields' });
+    if (e.timed || e.warmup) {
+      const f = el('label', { class: 'set-field' });
+      f.append(numInput(s.sec, '1', '', (v) => { s.sec = v; saveSet(s); }), el('span', {}, T.sec));
+      fields.appendChild(f);
+    } else {
+      const r = el('label', { class: 'set-field' }), k = el('label', { class: 'set-field' });
+      r.append(numInput(s.reps, '1', '', (v) => { s.reps = v; saveSet(s); }), el('span', {}, T.reps));
+      k.append(numInput(s.kg, '0.5', '', (v) => { s.kg = v; saveSet(s); }), el('span', {}, 'kg'));
+      fields.append(r, k);
+    }
+    if (s.prev) fields.appendChild(el('span', { class: 'live-prev' }, `${T.prev}: ${s.prev}`));
+    row.appendChild(fields);
+    if ((e.timed || e.warmup) && !s.done) {
+      const go = el('button', { type: 'button', class: 'secondary live-go' }, '▶');
+      go.title = T.start_timer;
+      go.addEventListener('click', () => runTimed(e, s, row, go));
+      row.appendChild(go);
+    }
+    const check = el('button', { type: 'button', class: 'live-check' + (s.done ? ' on' : '') }, '✓');
+    check.addEventListener('click', () => toggle(e, s));
+    row.appendChild(check);
+    return row;
+  }
+  function toggle(e, s) {
+    unlock();
+    s.done = !s.done;
+    saveSet(s);
+    if (s.done) {
+      const finishedExercise = e.sets.every((x) => x.done);
+      if (finishedExercise && cur < ex.length - 1) cur++;
+      if (!e.warmup) startRest(e.rest || 60);
+    } else endRest();
+    render();
+  }
+  function runTimed(e, s, row, btn) {
+    unlock();
+    clearInterval(workTimer);
+    let left = s.sec || 30;
+    btn.textContent = fmt(left); btn.disabled = true;
+    const end = Date.now() + left * 1000;
+    workTimer = setInterval(() => {
+      left = Math.ceil((end - Date.now()) / 1000);
+      btn.textContent = fmt(Math.max(0, left));
+      if (left <= 0) { clearInterval(workTimer); beep(2); toggle(e, s); }
+    }, 250);
+  }
+
+  // ------------------------------------------------------------------ üst bilgiler
+  const started = new Date(STATE.started);
+  setInterval(() => { document.getElementById('live-elapsed').textContent = fmt((Date.now() - started) / 1000); }, 1000);
+  const soundBtn = document.getElementById('tg-sound'), notifyBtn = document.getElementById('tg-notify');
+  const paint = () => { soundBtn.textContent = sound ? '🔊' : '🔇'; };
+  soundBtn.addEventListener('click', () => { unlock(); sound = !sound; store.set('live-sound', sound); paint(); if (sound) beep(1); });
+  // Telefon kilitliyken dinlenme bitişi için tarayıcı bildirimi (iPhone'da yalnız ana ekrana eklenmiş Kulvar'da).
+  if ('Notification' in window && Notification.permission === 'default') {
+    notifyBtn.hidden = false;
+    notifyBtn.addEventListener('click', () => { unlock(); Notification.requestPermission().then(() => { notifyBtn.hidden = true; }); });
+  }
+  document.addEventListener('click', unlock, { once: true });
+  paint(); render();
+})();
+</script>
+{% endblock %}

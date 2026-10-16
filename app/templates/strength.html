@@ -7,16 +7,114 @@
 <div class="hero">
   <div class="hero-greeting">
     <h1>{{ _('Kuvvet Antrenmanı') }}</h1>
-    <p class="subtitle">{{ macros.source_badge('hevy') }}</p>
+    <p class="subtitle">{{ macros.source_badge(strength_source if strength_source is defined else 'hevy') }}</p>
   </div>
 </div>
 
 <div class="tabs">
   <a href="/strength?tab=workouts" class="{{ 'active' if tab == 'workouts' }}">{{ _('Antrenmanlar') }}</a>
+  <a href="/strength?tab=routines" class="{{ 'active' if tab == 'routines' }}">📋 {{ _('Rutinler') }}</a>
   <a href="/strength?tab=measurements" class="{{ 'active' if tab == 'measurements' }}">📏 {{ _('Ölçümler') }}</a>
 </div>
 
+{% if tab == 'routines' %}
+{% if home_equipment is defined %}
+<div class="card" id="ekipman" style="margin-bottom: var(--space-4);">
+  <div class="metric-label" style="margin:0 0 6px;">🏠 {{ _('Evdeki ağırlıklar') }}</div>
+  <form method="post" action="/strength/{{ active_profile.id }}/equipment" class="stacked-form">
+    <div class="grid grid-2">
+      <label><span class="metric-label">{{ _('Dambıllar (kg, tek dambıl)') }}</span>
+        <input type="text" name="dumbbell" value="{{ home_equipment.get('dumbbell', '') }}" placeholder="5, 10" inputmode="decimal" /></label>
+      <label><span class="metric-label">{{ _('Kettlebell (kg)') }}</span>
+        <input type="text" name="kettlebell" value="{{ home_equipment.get('kettlebell', '') }}" placeholder="12, 16" inputmode="decimal" /></label>
+    </div>
+    <button type="submit" class="secondary" style="margin-top: var(--space-3);">{{ _('Kaydet') }}</button>
+  </form>
+  <div class="metric-caption" style="margin-top: 8px;">{{ _('Kademeli yüklenme dambıl ve kettlebell hareketlerinde bir sonraki mevcut ağırlığı önerir (ör. 5 kg × 15 → 10 kg × 8); en ağırındaysan tekrar artar. Koçun rutin oluşturucusu da bu ağırlıklarla çalışır. Salonda çalışıyorsan boş bırak.') }}</div>
+</div>
+{% endif %}
+<div class="stack">
+  {% for item in routine_list or [] %}
+  <a href="/strength/routines/{{ item.r.id }}" class="card" style="display:block; text-decoration:none; color:inherit;">
+    <div class="card-title-row" style="margin-bottom:0;">
+      <div style="min-width:0;">
+        <strong style="overflow-wrap:anywhere;">{{ item.r.title }}</strong>
+        <div class="metric-caption">{{ _('{n} hareket', n=item.count) }}</div>
+      </div>
+      {{ macros.source_badge('kulvar' if item.native else 'hevy') }}
+    </div>
+  </a>
+  {% else %}
+  <div class="card">{{ macros.empty_state(_('Henüz rutin yok'), _('Yeni bir rutin oluştur ya da Koç → Hedefler\'den koça hazırlat.'), icon='📋') }}</div>
+  {% endfor %}
+</div>
+<form method="post" action="/strength/{{ active_profile.id }}/routines/new" style="margin-top: var(--space-4);">
+  <button type="submit">+ {{ _('Yeni rutin') }}</button>
+</form>
+{% endif %}
+
 {% if tab == 'workouts' %}
+
+{% if live is defined %}
+{% if live %}
+<a href="/strength/live/{{ live.id }}" class="card" style="display:block; margin-bottom: var(--space-4); border-color: var(--primary); text-decoration:none; color: inherit;">
+  <div class="card-title-row" style="margin-bottom:0;">
+    <div><strong>▶️ {{ live.title }}</strong><div class="metric-caption">{{ _('Devam eden antrenman') }} · {{ live.start_time.strftime('%H:%M') }}</div></div>
+    <span class="btn">{{ _('Devam et') }} →</span>
+  </div>
+</a>
+{% elif routine_options %}
+<div class="card" style="margin-bottom: var(--space-4);">
+  <form method="post" action="/strength/{{ active_profile.id }}/live/start" class="strength-source">
+    <select name="routine_id" style="flex:1; min-width: 0;">
+      {% for r in routine_options %}<option value="{{ r.id }}" {{ 'selected' if today_routine and today_routine.id == r.id }}>{{ r.title }}{% if today_routine and today_routine.id == r.id %} · {{ _('bugün') }}{% endif %}</option>{% endfor %}
+    </select>
+    <button type="submit">▶️ {{ _('Antrenmana başla') }}</button>
+  </form>
+  <div class="metric-caption" style="margin-top: 8px;">{{ _('Telefonda canlı kayıt: hareketin animasyonu, set girişi, dinlenme sayacı. Dinlenme bitince telefonda ses ve titreşim.') }}</div>
+</div>
+{% endif %}
+{% endif %}
+
+{% if suggestions is defined and suggestions %}
+<div class="card" style="margin-bottom: var(--space-4); border-color: var(--success);">
+  <div class="metric-label" style="margin:0 0 6px;">📈 {{ _('Kademeli yüklenme') }}</div>
+  <div class="metric-caption" style="margin-bottom: 8px;">{{ _('Son iki antrenmanda hedefi tamamladığın hareketler için bir sonraki adım.') }}</div>
+  {% for item in suggestions %}
+  <div class="set-row" style="border-top: 1px solid var(--border); padding: 8px 0; flex-wrap: wrap;">
+    <span style="flex:1; min-width: 180px; overflow-wrap:anywhere;">{{ item.text }}</span>
+    <form method="post" action="/strength/suggestions/{{ item.s.id }}/apply"><button type="submit">✅ {{ _('Uygula') }}</button></form>
+    <form method="post" action="/strength/suggestions/{{ item.s.id }}/reject"><button type="submit" class="secondary">{{ _('Şimdilik kalsın') }}</button></form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if drafts is defined %}
+{% for d in drafts %}
+<a href="/strength/workouts/{{ d.id }}" class="card" style="display:block; margin-bottom: var(--space-4); border-color: #f59e0b; text-decoration:none; color: inherit;">
+  <div class="card-title-row" style="margin-bottom:0;">
+    <div>
+      <strong>⌚ {{ d.title }}</strong>
+      <div class="metric-caption">{{ d.start_time|ldate }} · {{ _('saatten geldi, onay bekliyor') }}</div>
+    </div>
+    <span class="btn">{{ _('Onayla') }} →</span>
+  </div>
+</a>
+{% endfor %}
+<div class="card" style="margin-bottom: var(--space-6);">
+  <form method="post" action="/strength/{{ active_profile.id }}/source" class="strength-source">
+    <span class="metric-label" style="margin:0;">{{ _('Kuvvet kaydı') }}</span>
+    {% for key, label in strength_sources.items() %}
+    <button type="submit" name="source" value="{{ key }}" class="{{ '' if strength_source == key else 'secondary' }}">{{ label }}</button>
+    {% endfor %}
+  </form>
+  <div class="metric-caption" style="margin-top: 8px;">
+    {% if strength_source == 'kulvar' %}{{ _('Antrenmanı saatle yap; Garmin senkronlanınca planla dolu bir taslak gelir, Telegram\'dan tek dokunuşla onaylarsın. Onaylanan değerler Garmin\'deki setlere ve Strava açıklamasına yazılır.') }}
+    {% else %}{{ _('Tekrar ve ağırlıklar Hevy\'de kaydettiğin antrenmandan alınır. Kulvar\'a geçince Hevy gerekmez: saatin kaydından taslak oluşur, sen onaylarsın.') }}{% endif %}
+  </div>
+</div>
+{% endif %}
 
 {% if summary %}
 <div class="grid grid-3" style="margin-bottom: var(--space-8);">
@@ -41,17 +139,17 @@
   <div class="card">
     <div class="card-title-row">
       <div>
-        <h2 style="margin-bottom:2px;">{{ w.title }}</h2>
-        <span class="metric-caption">{{ w.activity.start_time|ldate }} · {{ w.total_sets }} set</span>
+        <h2 style="margin-bottom:2px;">{% if w.id %}<a href="/strength/workouts/{{ w.id }}" style="color: inherit;">{{ w.title }}</a>{% else %}{{ w.title }}{% endif %}</h2>
+        <span class="metric-caption">{{ w.activity.start_time|ldate }} · {{ w.total_sets }} {{ _('set') }}</span>
       </div>
-      {{ macros.source_badge('hevy') }}
+      {{ macros.source_badge(w.source or 'hevy') }}
     </div>
     {% if w.exercises %}
     <div class="stack" style="gap: 10px;">
       {% for ex in w.exercises %}
       <div style="display:flex; justify-content:space-between; gap:12px; padding: 8px 0; border-bottom: 1px solid var(--border);">
-        <span style="font-weight:600; color:var(--text-primary); flex-shrink:0;">{{ ex.title }}</span>
-        <span style="color:var(--text-secondary); font-size:0.85rem; text-align:right;">{{ ex.summary }}</span>
+        <span style="font-weight:600; color:var(--text-primary); min-width:0; overflow-wrap:anywhere;">{{ ex.title }}</span>
+        <span style="color:var(--text-secondary); font-size:0.85rem; text-align:right; flex-shrink:0; max-width:45%;">{{ ex.summary }}</span>
       </div>
       {% endfor %}
     </div>
@@ -67,7 +165,7 @@
 </div>
 {% endif %}
 
-{% else %}
+{% elif tab == 'measurements' %}
 {# ============================= ÖLÇÜMLER SEKMESİ ============================= #}
 
 {% if measurements %}
@@ -133,6 +231,7 @@
 <div class="section">
   <div class="section-header"><h2>{{ _('Geçmiş') }}</h2></div>
   <div class="card">
+    <div class="table-scroll">
     <table>
       <thead>
         <tr><th>{{ _('Tarih') }}</th><th>{{ _('Kilo') }}</th><th>{{ _('Yağ %') }}</th><th>{{ _('Bel') }}</th><th>{{ _('Göğüs') }}</th></tr>
@@ -149,6 +248,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 </div>
 

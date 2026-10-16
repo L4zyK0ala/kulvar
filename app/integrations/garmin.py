@@ -219,11 +219,126 @@ def sync(profile: Profile, db: Session, credential: Credential, payload: dict) -
 
     days_ok = _sync_daily_metrics(client, profile, db, start, end)
     activities_added, activities_error = _sync_activities(client, profile, db, start, end)
+    from .. import heart
+
+    if heart.needs_refresh(profile):  # LTHR ve nabız bölgeleri günde bir
+        heart.refresh_from_garmin(client, profile, db)
 
     parts = [f"{days_ok} gün günlük metrik", f"{activities_added} aktivite"]
     if activities_error:
         parts.append(f"aktivite hatası: {activities_error}")
+    from .. import garmin_sets, strength_log
+
+    try:  # saatten gelen kuvvet antrenmanı için Kulvar kaydı (taslak ya da Hevy'den kopya)
+        drafts = strength_log.ingest_recent(db, profile, client)
+    except Exception:  # noqa: BLE001 - kayıt oluşturulamasa da senkron sürsün
+        db.rollback()
+        logger.exception("Kuvvet antrenmanı kaydı oluşturulamadı")
+        drafts = []
+    if drafts:
+        parts.append(f"{len(drafts)} kuvvet antrenmanı onay bekliyor")
+    try:  # kuvvet setlerinde saatin saydığı tekrar/ağırlık yerine onaylanan (ya da Hevy'deki) değerler
+        fixed = garmin_sets.fix_recent(db, profile, client)
+    except Exception:  # noqa: BLE001 - set düzeltmesi senkronu bozmasın
+        db.rollback()
+        logger.exception("Garmin setleri Hevy değerleriyle düzeltilemedi")
+        fixed = []
+    if fixed:
+        parts.append(f"{len(fixed)} kuvvet seti Hevy'ye göre düzeltildi")
     return SyncResult("ok", ", ".join(parts) + ".")
+
+
+def hr_target_range(planned: PlannedWorkout) -> tuple[int, int] | None:
+    """Garmin'e gidecek nabız aralığı (bpm). Sadece tavan verildiyse alt sınır, toparlanma
+    yürüyüşlerinde "nabız düşük" uyarısı çıkmayacak kadar aşağıda tutulur."""
+    if not planned.target_hr_max or planned.workout_type == "strength":
+        return None
+    from ..heart import easy_floor
+
+    low = planned.target_hr_min or easy_floor(getattr(planned, "profile", None)) or max(80, planned.target_hr_max - 50)
+    return int(low), int(planned.target_hr_max)
+
+
+def apply_hr_target(workout_dict: dict, planned: PlannedWorkout) -> None:
+    """Antrenman adımlarına özel nabız aralığı hedefi ekler; saat aralık dışına çıkınca uyarır."""
+    target = hr_target_range(planned)
+    if target is None:
+        return
+    for segment in workout_dict.get("workoutSegments", []):
+        for step in segment.get("workoutSteps", []):
+            if step.get("type") != "ExecutableStepDTO":
+                continue
+            step["targetType"] = {"workoutTargetTypeId": 4, "workoutTargetTypeKey": "heart.rate.zone", "displayOrder": 4}
+            step["targetValueOne"], step["targetValueTwo"] = float(target[0]), float(target[1])
+            step["zoneNumber"] = None
+
+
+def apply_strength_routine(workout_dict: dict, planned: PlannedWorkout) -> bool:
+    """Kuvvet gününe eşlenmiş bir Hevy rutini varsa tek zaman bloğu yerine hareket adımlarını koyar;
+    saat her hareketin animasyonunu gösterir ve tekrar sayar."""
+    if planned.workout_type != "strength":
+        return False
+    from sqlalchemy.orm import object_session
+
+    from .. import workout_library
+    from ..db import SessionLocal
+
+    db = object_session(planned)
+    own = db is None
+    db = db or SessionLocal()
+    try:
+        routine = workout_library.routine_for_plan(db, planned)
+        if routine is None:
+            return False
+        steps, seconds = workout_library.garmin_steps(db, routine)
+    finally:
+        if own:
+            db.close()
+    if not steps or not workout_dict.get("workoutSegments"):
+        return False
+    workout_dict["workoutSegments"][0]["workoutSteps"] = steps
+    workout_dict["estimatedDurationInSecs"] = seconds
+    desc = workout_dict.get("description") or ""
+    workout_dict["description"] = (f"{routine.title} · " + desc).strip(" ·")[:500]
+    return True
+
+
+def update_strength_routine(payload: dict, planned: PlannedWorkout) -> str | None:
+    """Garmin'deki mevcut kuvvet antrenmanını rutinin hareket adımlarıyla yerinde günceller."""
+    if not planned.garmin_workout_id:
+        return "Antrenman Garmin'de değil."
+    try:
+        client = _login_from_payload(payload)
+        workout = client.get_workout_by_id(planned.garmin_workout_id)
+        if not apply_strength_routine(workout, planned):
+            return "Bu güne eşlenmiş bir Hevy rutini yok."
+        client.update_workout(planned.garmin_workout_id, workout)
+    except Exception as exc:  # noqa: BLE001
+        return f"Garmin güncellemesi başarısız: {exc}"
+    return None
+
+
+def update_hr_target(payload: dict, planned: PlannedWorkout) -> str | None:
+    """Garmin'deki mevcut antrenmanın adımlarına nabız hedefini ekler/günceller. Antrenman aynı
+    ID ile yerinde güncellenir, takvimdeki kaydı korunur. Hata metni ya da None döner."""
+    if not planned.garmin_workout_id:
+        return "Antrenman Garmin'de değil."
+    if hr_target_range(planned) is None:
+        return "Nabız hedefi yok."
+    try:
+        client = _login_from_payload(payload)
+        workout = client.get_workout_by_id(planned.garmin_workout_id)
+        apply_hr_target(workout, planned)
+        client.update_workout(planned.garmin_workout_id, workout)
+        check = client.get_workout_by_id(planned.garmin_workout_id)
+    except Exception as exc:  # noqa: BLE001
+        return f"Garmin güncellemesi başarısız: {exc}"
+    low, high = hr_target_range(planned)
+    steps = [st for seg in check.get("workoutSegments", []) for st in seg.get("workoutSteps", [])
+             if st.get("type") == "ExecutableStepDTO"]
+    ok = steps and all((st.get("targetType") or {}).get("workoutTargetTypeKey") == "heart.rate.zone"
+                       and st.get("targetValueOne") == low and st.get("targetValueTwo") == high for st in steps)
+    return None if ok else "Garmin hedefi kaydetmedi (doğrulama başarısız)."
 
 
 def push_planned_workout(payload: dict, planned: PlannedWorkout) -> tuple[str | None, str | None]:
@@ -285,9 +400,13 @@ def push_planned_workout(payload: dict, planned: PlannedWorkout) -> tuple[str | 
         description=(planned.notes or None),
     )
 
+    workout_dict = workout.to_dict()
+    apply_hr_target(workout_dict, planned)
+    apply_strength_routine(workout_dict, planned)
+
     try:
         client = _login_from_payload(payload)
-        result = client.upload_workout(workout.to_dict())
+        result = client.upload_workout(workout_dict)
     except Exception as exc:  # noqa: BLE001
         return None, f"Garmin'e yükleme başarısız: {exc}"
 

@@ -19,7 +19,8 @@ import anthropic
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from . import i18n
+from .clock import utcnow
+from . import coach_memory, i18n
 from .config import settings
 from .models import CoachMessage, CoachThread, Profile
 
@@ -48,11 +49,27 @@ Haftalık hedef: Verideki "Haftalık Hedef ve Dönem" bölümü, Kulvar'ın hesa
 - Hastalık, ağrı, kötü uyku/toparlanma işaretleri, koç talimatlarındaki kısıtlar (nabız tavanı vb.) ve doktor notları her zaman haftalık hedefin önündedir.
 - Yarış dönemi: Bölümde "YARIŞ DÖNEMİ" yazıyorsa antrenman yapısını yarışın mesafesine, hedefine ve fazına göre kur (hazırlık bloğunda kademeli uzun koşu ve uygunsa kalite antrenmanı, taper'da hacmi azaltıp yoğunluğu koruma, yarış haftasında hafif açma, toparlanmada kolay hareket). Bu dönemde haftalık düzen yön göstericidir; koşu/kuvvet sayısını faza göre değiştirebilirsin, nedenini kısaca söyle. B önceliği yarış normal haftanın içinde 2-3 günlük hafif dönemle, C önceliği antrenman koşusu olarak ele alınır.
 
+Hafıza: Verideki "Koçun Notları" bölümü senin kendi tuttuğun güncel özettir; konuşmalar arasında kalıcı olan tek yer burasıdır. Öncelik sırası her zaman: doktor notları > koç talimatları > koçun notları. Notlar talimatları ya da doktor notlarını gevşetemez.
+- Notları güncellemek için cevabının sonuna şu bloğu yaz; içine notların TAMAMININ yeni halini koy (en fazla ~2000 karakter, kısa maddeler: güncel faz ve hedef, gözlediğin örüntüler, ilerleme göstergeleri, dikkat edilecekler, açık sorular):
+<<<KOÇ NOTLARI
+...
+>>>
+  Bunu haftalık değerlendirmede, önemli bir değişiklikte ya da kullanıcı istediğinde yap; her cevapta yazma.
+- Koç talimatlarında doktor notuyla çelişen, artık geçerli olmayan ya da eksik kalan bir kural görürsen veya kullanıcı açıkça isterse değişiklik öner:
+<<<TALİMAT DEĞİŞİKLİĞİ
+ESKİ: talimatlardan birebir kopyalanmış, talimatta tam bir kez geçen kısa parça (bir madde ya da cümle); yeni kural eklemek için boş bırak
+YENİ: onun yerine geçecek metin (silmek için boş bırak)
+NEDEN: tek cümle, mümkünse kaynağıyla (ör. 05.10 doktor notu)
+>>>
+  Her değişiklik için ayrı blok yaz. Öneriler kullanıcı onaylayana kadar uygulanmaz; onaylanmamış öneriyi uygulanmış gibi kabul etme. Blokları cevapta ayrıca tekrar anlatma, Kulvar onları ayrı kart olarak gösterir.
+
 Antrenman önerisi: Antrenman önerdiğinde, cevabının sonuna Kulvar'ın plana ekleyebilmesi için her antrenman için tam olarak şu formatta bir satır yaz (alanları "|" ile ayır, tarih YYYY-AA-GG):
-TARIH | TIP | BAŞLIK | MESAFE_KM | SURE_DK | NOT
+TARIH | TIP | BAŞLIK | MESAFE_KM | SURE_DK | NOT | NABIZ
 - TIP: running, cycling, walking, swimming, strength veya other
 - BAŞLIK kısa ve İngilizce, "[Weekday] [Intensity]" kalıbında (ör. Wednesday Tempo, Saturday Long, Tuesday Strength); gün adı tarihe karşılık gelmeli; uzun koşu başlığında "Long" geçsin
 - MESAFE_KM veya SURE_DK'dan en az biri dolu olsun; günün planını iptal etmek için TIP=other ve NOT'a "dinlenme"
+- Kuvvet satırlarında NOT'un başına verideki "Kuvvet Rutinleri (Hevy)" bölümünden kullanılacak rutinin adını yaz (ör. "D1 — …"); Kulvar o rutinin hareketlerini plana ve Garmin'e hareket hareket ekler.
+- NABIZ: koşu, yürüyüş ve bisiklette nabız hedefi. Bölge olarak yaz: "Z2" (Z2'nin üst sınırı tavan olur; kolay ve uzun koşular için), "Z3-Z4" (aralık; tempo ve eşik için). Kulvar bölgeyi bu kişinin verideki "Nabız Bölgeleri" bölümündeki LTHR bölgelerine göre bpm'e çevirir, Garmin antrenmanına hedef olarak ekler ve saat aralığın dışına çıkınca uyarır. Koç talimatlarında veya doktor notlarında bölgeden daha düşük bir nabız tavanı varsa bölge yerine o sayıyı yaz ("155" ya da "120-155"). Kısa interval ve kuvvette boş bırak. NOT'taki nabız açıklaması kalabilir ama hedef bu alandan okunur.
 - Onaylanan satır, o tarihteki henüz yapılmamış mevcut planın yerine geçer; mevcut plan uygunsa o gün için satır yazma. Aynı güne iki antrenman istiyorsan ikisini de yaz.
 - Normalde sadece bir sonraki antrenman için tek satır yaz. Haftalık plan istendiğinde ("[Haftalık plan]" mesajı veya kullanıcı açıkça istediğinde) ya da bir kaçırma sonrası haftanın kalanını yeniden düzenlemen gerektiğinde, değişen her gün için ayrı satır yaz (dinlenme günleri hariç). Kullanıcı istemedikçe veya konu antrenman önerisi değilse bu satırları ekleme."""
 
@@ -74,7 +91,7 @@ def api_key_configured() -> bool:
 
 
 def _month_start() -> dt.datetime:
-    now = dt.datetime.utcnow()
+    now = utcnow()
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
@@ -143,7 +160,7 @@ def start_new_thread(db: Session, profile: Profile) -> CoachThread:
 
 def _cost(usage, model: str) -> float:
     """Kullanımı model fiyatıyla dolara çevirir. Fallback çalıştıysa her adım kendi modelinin fiyatıyla."""
-    steps = usage.iterations or [usage]
+    steps = getattr(usage, "iterations", None) or [usage]  # beta dışı çağrıların Usage'ında iterations yok
     total = 0.0
     for step in steps:
         price = _PRICES.get(getattr(step, "model", None) or model, _PRICES["claude-opus-5-5"])
@@ -295,12 +312,22 @@ def _stream_reply_locked(db, profile, thread, user_content, snapshot, display_te
         ))
         seq += 1
     reply_text = "".join(b.text for b in final.content if b.type == "text")
+    # Koçun hafıza blokları (notlar / talimat önerileri) uygulanır ve gösterilen metinden çıkarılır;
+    # API'ye giden geçmiş (content_json) koçun yazdığı haliyle kalır.
+    memory = coach_memory.process_reply(db, profile, reply_text)
+    shown = memory["text"]
+    summary = []
+    if memory["notes_updated"]:
+        summary.append(i18n.t(lang, "📝 Koç notlarını güncelledi."))
+    if memory["proposals"]:
+        summary.append(i18n.t(lang, "✏️ {n} talimat değişikliği önerisi onayını bekliyor.", n=len(memory["proposals"])))
+    display = (shown + ("\n\n" + "\n".join(summary) if summary else "")).strip()
     usage = final.usage
     steps = usage.iterations or [usage]
     db.add(CoachMessage(
         thread_id=thread.id, profile_id=profile.id, seq=seq, role="assistant",
         content_json=json.dumps([b.to_dict(mode="json") for b in final.content], ensure_ascii=False),
-        display_text=reply_text, channel=channel, model=final.model, stop_reason=final.stop_reason,
+        display_text=display, channel=channel, model=final.model, stop_reason=final.stop_reason,
         request_id=getattr(final, "_request_id", None),
         input_tokens=sum(s.input_tokens or 0 for s in steps),
         output_tokens=sum(s.output_tokens or 0 for s in steps),
@@ -314,7 +341,11 @@ def _stream_reply_locked(db, profile, thread, user_content, snapshot, display_te
 
     yield {
         "t": "done",
-        "text": reply_text,
+        "text": display,
+        "memory": {
+            "notes_updated": memory["notes_updated"],
+            "proposals": [{"id": r.id, "old": r.old_snippet, "new": r.new_snippet, "reason": r.reason} for r in memory["proposals"]],
+        },
         "truncated": final.stop_reason == "max_tokens",
         "cost_usd": cost,
         "month_profile_usd": month_cost(db, profile.id),

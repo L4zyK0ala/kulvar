@@ -41,6 +41,10 @@ def _plan_line(w: PlannedWorkout, profile: Profile | None = None) -> str:
         bits.append(f"{w.target_distance_m / 1000:g} km")
     if w.target_duration_s:
         bits.append(f"{int(w.target_duration_s // 60)} " + (telegram_bot.T(profile, "dk") if profile else "dk"))
+    if w.target_hr_max:
+        from .routers.coach import hr_target_label
+
+        bits.append(hr_target_label(w))
     return " · ".join(bits) + (" ⌚" if w.garmin_workout_id else "")
 
 
@@ -99,7 +103,8 @@ def check_profile(db, profile: Profile, today: dt.date | None = None) -> str:
                 f"Gelecek hafta ({next_start:%d.%m}–{next_start + dt.timedelta(days=6):%d.%m}) mevcut plan: {existing}\n\n"
                 "1) Bu haftayı hedefe göre 3-5 satırda değerlendir (tutan/tutmayan, toparlanma). "
                 "2) Gelecek haftayı dönemine göre planla: normal dönemde haftalık düzen hedefi, yarış döneminde fazı esas al. "
-                "Her antrenman günü için ayrı plan satırı yaz; mevcut plandaki uygun günler için satır yazma. Telegram'da okunacak, kısa tut."
+                "Her antrenman günü için ayrı plan satırı yaz; mevcut plandaki uygun günler için satır yazma. Telegram'da okunacak, kısa tut. "
+                "3) Cevabın sonunda KOÇ NOTLARI bloğuyla notlarının güncel halini yaz; talimatlarda artık geçerli olmayan bir kural gördüysen TALİMAT DEĞİŞİKLİĞİ öner."
             )
             telegram_bot.typing(profile)
             result = coach_chat.reply(db, profile, prompt, display_text="🗓️ Haftalık plan", channel="auto")

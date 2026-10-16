@@ -15,7 +15,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "tem
 
 
 def local_dt(value: dt.datetime | None) -> dt.datetime | None:
-    """Naive UTC datetime'ı (Credential.last_synced_at gibi dt.datetime.utcnow() ile üretilen
+    """Naive UTC datetime'ı (Credential.last_synced_at gibi clock.utcnow() ile üretilen
     alanlar) ekranda göstermeden önce yerel saat dilimine çevirir."""
     if value is None:
         return None

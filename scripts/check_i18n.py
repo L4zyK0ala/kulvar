@@ -58,11 +58,12 @@ for path in APP.rglob("*.py"):
     Calls(path.name, help_text).visit(tree)
 
 # Şablonda _(değişken) ile çevrilen sabit sözlük değerleri ve sabit metinler
-from app import activity_display, health, measurements, training  # noqa: E402
+from app import activity_display, health, measurements, meds, routine_builder, training  # noqa: E402
 from app.routers import coach, dashboard  # noqa: E402
 
 for mapping in (training.DAY_KINDS, training.PRIORITY_LABELS, health.KIND_LABELS, coach.WORKOUT_TYPE_LABELS,
-                activity_display._LABELS, dashboard._PLAN_TYPE_LABELS):
+                activity_display._LABELS, dashboard._PLAN_TYPE_LABELS, meds.KINDS, meds.STATUSES, meds.VERDICTS,
+                routine_builder.EQUIPMENT):
     for value in mapping.values():
         add(value, "dynamic")
 for _field, label, _unit in measurements.MEASUREMENT_FIELDS:
@@ -74,10 +75,13 @@ for title, _unit, fields in measurements._CHART_GROUPS:
             add(name, "measurements")
 for text in ("Boy", "Dinlenik nabız", "Body Battery (zirve)", "Stres", "değişim yok", "İyi geceler", "Günaydın",
              "İyi günler", "İyi akşamlar", "Bugün", "Yarın", "📊 Güncel Kulvar verileri koça iletildi",
-             "🌙 Akşam kontrolü", "🗓️ Haftalık plan", "Bağlandı, ilk senkronizasyon bekleniyor.", "Profil bulunamadı.",
+             "🌙 Akşam kontrolü", "🗓️ Haftalık plan", "Bağlandı, ilk senkronizasyon bekleniyor.", "Bu Strava hesabı başka bir profile bağlı; bu profilin sahibinin Strava hesabıyla giriş yapıp tekrar dene.", "Onay farklı bir Strava hesabıyla verildi; bu profilin bağlı olduğu Strava hesabıyla giriş yapıp tekrar dene.", "Profil bulunamadı.",
              "Desteklenmeyen dosya türü. PDF veya fotoğraf (JPEG/PNG) gönder.", "Dosya çok büyük (maks. 20 MB).",
              "Desteklenmeyen dosya türü. JPEG, PNG, WEBP veya GIF yükle.", "Dosya çok büyük (maks. 8 MB).", "Boş dosya.",
-             "Kulvar'da taşındı ama Garmin bağlı olmadığı için Garmin takvimi güncellenemedi."):
+             "Kulvar'da taşındı ama Garmin bağlı olmadığı için Garmin takvimi güncellenemedi.",
+             "Servis yeniden başlatıldığı için yorum yarıda kaldı; tekrar yorumlat.",
+             "Servis yeniden başlatıldığı için değerlendirme yarıda kaldı; tekrar dene.",
+             "Servis yeniden başlatıldığı için iş yarıda kaldı; tekrar dene."):
     add(text, "extra")
 
 catalog = json.loads((APP / "locales" / "en.json").read_text(encoding="utf-8"))

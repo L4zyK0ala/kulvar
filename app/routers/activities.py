@@ -3,9 +3,11 @@ from __future__ import annotations
 import datetime as dt
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
+from ..clock import utcnow
 from ..activity_display import (
     activity_icon,
     activity_label,
@@ -20,7 +22,8 @@ from ..activity_display import (
 )
 from ..db import get_db
 from ..deps import get_current_profile
-from ..models import Activity, Profile
+from .. import feedback
+from ..models import Activity, Profile, StrengthWorkout
 from ..streams import compute_splits, find_sibling_with_stream, load_stream_data, stream_summary
 from ..templating import templates
 
@@ -40,7 +43,7 @@ def list_activities(
         return templates.TemplateResponse(request, "profile_picker.html", {"profiles": profiles})
 
     if tab == "running":
-        since = dt.datetime.utcnow() - dt.timedelta(days=180)
+        since = utcnow() - dt.timedelta(days=180)
         runs = running_activities(db, current.id, since)
         return templates.TemplateResponse(
             request,
@@ -131,5 +134,29 @@ def activity_detail(
             "elevation_series": elevation_series,
             "hr_series": hr_series,
             "stream_from_other_source": stream_from_other_source,
+            "rpe": {"kind": "act", "id": activity.id, "fb": feedback.find(db, current.id, feedback.refs_for_activity(db, activity))},
         },
     )
+
+
+@router.post("/feedback/{profile_id}")
+def save_feedback(profile_id: str, kind: str = Form(...), obj_id: str = Form(...), rpe: str = Form(""), note: str = Form(""),
+                  back: str = Form("/dashboard"), db: Session = Depends(get_db)):
+    """Antrenman sonrası his: RPE (1–10) ve not. Rakama basmak puanı, "Kaydet" yalnız notu kaydeder."""
+    profile = db.get(Profile, profile_id)
+    target = back if back.startswith("/") and not back.startswith("//") else "/dashboard"
+    if profile is None:
+        return RedirectResponse(target, status_code=303)
+    if kind == "act":
+        activity = db.get(Activity, obj_id)
+        if activity is None or activity.profile_id != profile_id:
+            return RedirectResponse(target, status_code=303)
+        refs, day = feedback.refs_for_activity(db, activity), activity.start_time.date()
+        minutes, title = (activity.duration_s or 0) / 60 or None, activity_label(activity.source, activity.activity_type)
+    else:
+        workout = db.get(StrengthWorkout, obj_id)
+        if workout is None or workout.profile_id != profile_id:
+            return RedirectResponse(target, status_code=303)
+        refs, day, minutes, title = feedback.refs_for_workout(db, workout), workout.start_time.date(), (workout.duration_s or 0) / 60 or None, workout.title
+    feedback.save(db, profile, refs, day, minutes, title, int(rpe) if rpe.isdigit() else None, note)
+    return RedirectResponse(target + "#rpe", status_code=303)

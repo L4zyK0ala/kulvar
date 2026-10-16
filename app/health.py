@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import calendar
 import datetime as dt
+import json
 import logging
 import re
 import uuid
@@ -17,6 +18,7 @@ from pathlib import Path
 import anthropic
 from sqlalchemy.orm import Session
 
+from .clock import utcnow
 from . import i18n
 from .config import settings
 from .models import CoachMessage, HealthRecord, HealthSchedule, Profile
@@ -61,6 +63,9 @@ KIND_LABELS = {
 DEFAULT_INTERVALS = {"blood": 6, "cardio": 12}
 SUPPORTED_MIME = {"application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"}
 _MAX_FILE_BYTES = 20 * 1024 * 1024
+MAX_FILES = 10
+# Claude isteği 32 MB ile sınırlı; base64 ~%33 büyüttüğü için tek analizdeki toplam ham boyut bunu aşmamalı.
+MAX_TOTAL_BYTES = 22 * 1024 * 1024
 
 
 def add_months(d: dt.date, months: int) -> dt.date:
@@ -103,7 +108,7 @@ def schedule_status(db: Session, profile: Profile, today: dt.date | None = None)
 
 def due_reminders(db: Session, profile: Profile, now: dt.datetime | None = None) -> list[str]:
     """Zamanı gelen/geçen kontroller için hatırlatma metinleri; aynı kontrol haftada bir kez hatırlatılır."""
-    now = now or dt.datetime.utcnow()
+    now = now or utcnow()
     messages = []
     for item in schedule_status(db, profile, now.date()):
         s = item["schedule"]
@@ -141,21 +146,112 @@ def store_file(profile_id: str, data: bytes, mime_type: str) -> str:
     return str(path.relative_to(DATA_DIR))
 
 
-def file_bytes(record: HealthRecord) -> bytes | None:
+def record_files(record: HealthRecord) -> list[dict]:
+    """Kaydın tüm belgeleri (ilk belge + aynı tahlilin ek belgeleri): [{"path", "mime", "name"}]."""
+    files = [{"path": record.file_path, "mime": record.mime_type, "name": record.file_name}] if record.file_path else []
+    try:
+        files += json.loads(record.extra_files or "[]")
+    except ValueError:
+        pass
+    return files
+
+
+def add_file(record: HealthRecord, rel: str, mime: str, name: str | None = None) -> None:
+    """Kayda belge ekler (ilk belge file_path'e, sonrakiler extra_files'a)."""
     if not record.file_path:
+        record.file_path, record.mime_type, record.file_name = rel, mime, name
+        return
+    extra = record_files(record)[1:]
+    extra.append({"path": rel, "mime": mime, "name": name})
+    record.extra_files = json.dumps(extra, ensure_ascii=False)
+
+
+def _safe_path(rel: str | None):
+    if not rel:
         return None
-    path = (DATA_DIR / record.file_path).resolve()
-    if not path.is_relative_to(DATA_DIR.resolve()) or not path.exists():
-        return None
-    return path.read_bytes()
+    path = (DATA_DIR / rel).resolve()
+    return path if path.is_relative_to(DATA_DIR.resolve()) and path.exists() else None
+
+
+def file_path_at(record: HealthRecord, index: int = 0):
+    files = record_files(record)
+    return (_safe_path(files[index]["path"]), files[index]["mime"]) if 0 <= index < len(files) else (None, None)
+
+
+def file_bytes(record: HealthRecord, index: int = 0) -> bytes | None:
+    path, _ = file_path_at(record, index)
+    return path.read_bytes() if path else None
+
+
+def content_blocks(record: HealthRecord) -> list[dict]:
+    """Claude'a gidecek belge blokları (PDF → document, fotoğraf → image); okunamayanlar atlanır."""
+    blocks = []
+    for f in record_files(record):
+        path = _safe_path(f["path"])
+        if path is None:
+            continue
+        b64 = base64.standard_b64encode(path.read_bytes()).decode()
+        blocks.append({"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64}}
+                      if f["mime"] == "application/pdf"
+                      else {"type": "image", "source": {"type": "base64", "media_type": f["mime"], "data": b64}})
+    return blocks
+
+
+def total_bytes(record: HealthRecord) -> int:
+    return sum(p.stat().st_size for f in record_files(record) if (p := _safe_path(f["path"])))
 
 
 def delete_record(db: Session, record: HealthRecord) -> None:
-    if record.file_path:
-        path = (DATA_DIR / record.file_path).resolve()
-        if path.is_relative_to(DATA_DIR.resolve()) and path.exists():
+    for f in record_files(record):
+        path = _safe_path(f["path"])
+        if path is not None:
             path.unlink()
     db.delete(record)
+    db.commit()
+
+
+def analyze_in_background(db: Session, record: HealthRecord) -> None:
+    """Yorumu arka planda başlatır; durum record.analysis_status'ta (running → None ya da failed)."""
+    from . import background
+
+    record.analysis_status, record.analysis_error = "running", None
+    db.commit()
+    background.start(f"health-{record.id}", _analyze_job, record.id)
+
+
+def _analyze_job(record_id: str) -> None:
+    from .db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        record = db.get(HealthRecord, record_id)
+        profile = db.get(Profile, record.profile_id) if record else None
+        if record is None or profile is None:
+            return
+        try:
+            outcome = analyze_record(db, profile, record)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Belge yorumu başarısız")
+            outcome = {"ok": False, "message": str(exc)[:300]}
+        db.refresh(record)
+        record.analysis_status = None if outcome.get("ok") else "failed"
+        record.analysis_error = None if outcome.get("ok") else outcome.get("message")
+        db.commit()
+        if outcome.get("ok") and record.kind == "blood" and record.labs_extracted_at is None:
+            from . import labs  # yorumda değer bloğu yoksa (nadiren) ayrı çağrıyla çıkar
+
+            labs.extract_quietly(record.id)
+    finally:
+        db.close()
+
+
+def reset_interrupted(db: Session) -> None:
+    """Servis yeniden başlarken yarıda kalan arka plan işlerini "başarısız" olarak işaretler (tekrar denenebilsin)."""
+    for record in db.query(HealthRecord).filter(HealthRecord.analysis_status == "running").all():
+        record.analysis_status, record.analysis_error = "failed", "Servis yeniden başlatıldığı için yorum yarıda kaldı; tekrar yorumlat."
+    for profile in db.query(Profile).filter(Profile.meds_eval_status == "running").all():
+        profile.meds_eval_status = "failed"
+        profile.meds_eval_summary = "Servis yeniden başlatıldığı için değerlendirme yarıda kaldı; tekrar dene."
     db.commit()
 
 
@@ -214,9 +310,11 @@ def analyze_record(db: Session, profile: Profile, record: HealthRecord) -> dict:
     spent = coach_chat.month_cost(db)
     if spent >= settings.coach_monthly_budget_usd:
         return {"ok": False, "message": i18n.t(lang, "Bu ayki Claude bütçesi doldu (${spent}). Belge kaydedildi ama yorumlanmadı.", spent=f"{spent:.2f}")}
-    data = file_bytes(record)
-    if data is None:
+    blocks = content_blocks(record)
+    if not blocks:
         return {"ok": False, "message": i18n.t(lang, "Belge dosyası bulunamadı.")}
+    if total_bytes(record) > MAX_TOTAL_BYTES:
+        return {"ok": False, "message": i18n.t(lang, "Belgeler toplamda çok büyük (maks. 22 MB). Daha az ya da sıkıştırılmış dosya yükle.")}
 
     previous = (
         db.query(HealthRecord)
@@ -228,15 +326,16 @@ def analyze_record(db: Session, profile: Profile, record: HealthRecord) -> dict:
     prev_text = "\n\n".join(
         f"[{KIND_LABELS.get(p.kind, p.kind)} — {p.record_date or p.created_at.date()}]\n{p.ai_summary}" for p in previous
     ) or "Önceki yorumlanmış kayıt yok."
-    b64 = base64.standard_b64encode(data).decode()
-    block = (
-        {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64}}
-        if record.mime_type == "application/pdf"
-        else {"type": "image", "source": {"type": "base64", "media_type": record.mime_type, "data": b64}}
-    )
     user_text = f"Ekteki {KIND_LABELS.get(record.kind, 'sağlık belgesi').lower()}ni yorumla."
+    if len(blocks) > 1:
+        user_text += (f" Aynı tahlile ait {len(blocks)} belge var (ör. hemogram ve biyokimya ayrı sayfalarda); "
+                      "hepsini birlikte tek bir değerlendirme olarak yorumla, tabloyu birleştir.")
     if record.text_note:
         user_text += f"\nKişinin notu: {record.text_note}"
+    if record.kind == "blood":  # seyir grafiği için sayısal değerler aynı çağrıda (belgeler ikinci kez gönderilmez)
+        from . import labs
+
+        user_text += labs.analysis_addendum()
 
     client = anthropic.Anthropic()
     try:
@@ -247,7 +346,7 @@ def analyze_record(db: Session, profile: Profile, record: HealthRecord) -> dict:
                 name=profile.name, kind=KIND_LABELS.get(record.kind, "sağlık"), format_rule=_FORMAT_RULES[lang],
                 history=(profile.coach_instructions or "Kayıtlı geçmiş yok.").strip(), previous=prev_text,
             ),
-            messages=[{"role": "user", "content": [block, {"type": "text", "text": user_text}]}],
+            messages=[{"role": "user", "content": [*blocks, {"type": "text", "text": user_text}]}],
             output_config={"effort": settings.coach_effort},
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
@@ -272,6 +371,11 @@ def analyze_record(db: Session, profile: Profile, record: HealthRecord) -> dict:
         return {"ok": False, "message": i18n.t(lang, "Claude bu belgeyi yorumlayamadı.")}
 
     text = "".join(b.text for b in final.content if b.type == "text").strip()
+    values_block = None
+    if record.kind == "blood":
+        from . import labs
+
+        values_block, text = labs.split_block(text)
     m = re.search(r"(?:TARİH|DATE):\s*(\d{4}-\d{2}-\d{2})", text)
     if m:
         try:
@@ -282,6 +386,11 @@ def analyze_record(db: Session, profile: Profile, record: HealthRecord) -> dict:
     record.coach_note = note.group(1).strip()[:1000] if note else None
     record.ai_summary = text
     record.cost_usd = cost
+    if values_block is not None:
+        from . import labs
+
+        labs.store(db, profile, record, labs.parse(values_block, record.record_date or record.created_at.date()))
+        record.labs_extracted_at = utcnow()
     if record.kind in DEFAULT_INTERVALS and record.record_date:
         sched = next(s for s in ensure_schedules(db, profile) if s.kind == record.kind)
         if not sched.last_date or record.record_date > sched.last_date:

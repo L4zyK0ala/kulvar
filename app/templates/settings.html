@@ -55,6 +55,16 @@
           <form method="post" action="/settings/{{ active_profile.id }}/{{ s.key }}/disconnect" style="display:inline;">
             <button type="submit" class="danger">{{ _('Bağlantıyı Kaldır') }}</button>
           </form>
+          {% if s.key == 'strava' and strava_can_write is defined %}
+          <div class="metric-caption" style="margin-top: 8px;">
+            {% if strava_can_write %}
+            ✓ {{ _('Hevy antrenmanının hareketleri, Garmin\'den Strava\'ya gelen kuvvet kaydının başlığına ve açıklamasına yazılır.') }}
+            {% else %}
+            <a class="btn secondary" href="/settings/{{ active_profile.id }}/strava/authorize" style="margin-bottom: 6px;">✍️ {{ _('Strava\'ya yazma izni ver') }}</a><br />
+            {{ _('Hevy antrenmanının hareketleri ve setleri, Garmin\'den Strava\'ya gelen kuvvet kaydına yazılsın: nabız ve hareketler tek kayıtta. Hevy\'nin kendi Strava yüklemesini kapatman önerilir, yoksa iki kayıt olur.') }}
+            {% endif %}
+          </div>
+          {% endif %}
           {% elif s.key == 'strava' %}
           <a class="btn" href="/settings/{{ active_profile.id }}/strava/authorize">{{ _('Strava ile Bağlan') }}</a>
           {% if strava_app %}
@@ -224,6 +234,41 @@
     </div>
   </div>
 </div>
+
+{% if backup_info is defined %}
+<div class="section" id="yedekleme">
+  <div class="section-header"><h2>{{ _('Yedekleme') }}</h2></div>
+  <div class="card">
+    {% set b = backup_info %}
+    {% if backup_running %}
+    <div class="bg-running" style="margin-bottom: var(--space-3);">⏳ {{ _('Yedek alınıyor…') }}</div>
+    <script>setTimeout(() => location.reload(), 5000);</script>
+    {% endif %}
+    {% if b.error %}<div style="color: var(--danger); margin-bottom: var(--space-3);">⚠️ {{ _('Son yedek denemesi başarısız') }} ({{ b.error_at|replace('T', ' ') }}): {{ b.error }}</div>{% endif %}
+    {% if b.copy_error %}<div style="color: var(--danger); margin-bottom: var(--space-3);">⚠️ {{ _('İkinci konuma kopyalanamadı') }}: {{ b.copy_error }}</div>{% endif %}
+    <div class="grid grid-2">
+      <div>
+        <div class="metric-label">{{ _('Son yedek') }}</div>
+        {% if b.latest_at %}<div><strong>{{ b.latest_at.strftime('%d.%m.%Y %H:%M') }}</strong> · {{ '%.1f'|format(b.latest_mb) }} MB</div>
+        {% else %}<div class="metric-caption">{{ _('Henüz yedek yok.') }}</div>{% endif %}
+      </div>
+      <div>
+        <div class="metric-label">{{ _('Saklanan') }}</div>
+        <div>{{ _('{n} yedek', n=b.count) }} · {{ '%.1f'|format(b.total_mb) }} MB</div>
+      </div>
+    </div>
+    <div class="metric-caption" style="margin-top: var(--space-3);">
+      {{ _('Konum') }}: <code>{{ b.dir }}</code>{% if b.copy_dir %} · {{ _('ikinci kopya') }}: <code>{{ b.copy_dir }}</code>{% endif %}
+    </div>
+    <form method="post" action="/settings/backup" style="margin-top: var(--space-3);">
+      <input type="hidden" name="profile_id" value="{{ active_profile.id }}" />
+      <button type="submit" class="secondary" {{ 'disabled' if backup_running }}>💾 {{ _('Şimdi yedekle') }}</button>
+    </form>
+    <div class="metric-caption" style="margin-top: 8px;">{{ _('Her gece {hour}:00\'da veritabanı, sağlık belgeleri ve profil resimleri tek bir arşive yedeklenir: son 14 günün her yedeği ve 8 haftaya kadar haftada bir yedek saklanır. Yedek alınamazsa ya da bir veri kaynağının senkronu {alert} saattir başarısızsa Telegram\'dan haber verilir.', hour='%02d'|format(b.hour), alert=alert_hours) }}</div>
+    <div class="metric-caption" style="margin-top: 6px;">{{ _('Geri yüklemek için: servisi durdur, scripts/restore_backup.py ile arşivi geri yükle, servisi başlat. Hesap bilgileri .env\'deki şifreleme anahtarıyla açılır; anahtar yedeğe konmaz, ayrıca sakla.') }}</div>
+  </div>
+</div>
+{% endif %}
 
 <div class="section">
   <div class="section-header"><h2>{{ _('Profil') }}</h2></div>

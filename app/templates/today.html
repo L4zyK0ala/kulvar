@@ -14,6 +14,18 @@
   </div>
 </div>
 
+{% if morning is defined and morning %}
+<div class="card" style="margin-bottom: var(--space-5); border-color: #f59e0b;">
+  <div style="font-weight:700;">🌅 {{ _('Toparlanman bugün düşük görünüyor') }}</div>
+  <div class="metric-caption" style="margin: 4px 0 10px;">{{ morning.reasons }} · {{ _('Bugünkü antrenman: {title}', title=morning.title) }}</div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <form method="post" action="/morning/{{ morning.id }}/ease"><button type="submit">✅ {{ _('Kolaya çevir') }}</button></form>
+    <form method="post" action="/morning/{{ morning.id }}/keep"><button type="submit" class="secondary">{{ _('Planı koru') }}</button></form>
+  </div>
+  <div class="metric-caption" style="margin-top: 8px;">{{ _('Kolaya çevirince süre %30 kısalır, nabız tavanı Z2 olur ve Garmin\'deki antrenman güncellenir.') }}</div>
+</div>
+{% endif %}
+
 <div class="today-grid">
   {# ---------------- Toparlanma ---------------- #}
   <div class="card">
@@ -146,6 +158,7 @@
       {% if hero.hr %}<div><div class="metric-label">{{ _('Ort. nabız') }}</div><div class="metric-value num">{{ hero.hr }}<span class="metric-unit">bpm</span></div></div>{% endif %}
     </div>
   </a>
+  {% if hero and hero.rpe %}<div style="margin-top: var(--space-3);">{{ macros.rpe_widget(hero.rpe, '/dashboard') }}</div>{% endif %}
   {% if more_activities %}
   <div class="card" style="margin-top: var(--space-4);">
     <div class="activity-feed">{% for item in more_activities %}{{ macros.activity_feed_item(item) }}{% endfor %}</div>

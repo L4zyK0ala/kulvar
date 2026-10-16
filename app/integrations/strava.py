@@ -19,6 +19,14 @@ logger = logging.getLogger("kulvar.strava")
 CALLBACK_PATH = "/settings/strava/callback"
 
 _STREAM_TYPES = ["time", "distance", "latlng", "altitude", "heartrate", "cadence", "watts"]
+# activity:write: Hevy antrenmanının hareketlerini Garmin'den gelen Strava kaydının başlık/açıklamasına
+# yazmak için (strava_merge). Kullanıcı onay ekranında bu izni kaldırabilir; o zaman sadece okunur.
+SCOPES = ["activity:read_all", "activity:write"]
+
+
+def can_write(payload: dict) -> bool:
+    """Strava'nın onay sonrası bildirdiği izinler arasında yazma var mı (eski bağlantılarda kayıt yok → hayır)."""
+    return "activity:write" in (payload.get("scope") or "").split(",")
 
 
 def callback_domain() -> str:
@@ -45,20 +53,22 @@ def authorize_url(profile_id: str, app: dict | None = None) -> str:
     return client.authorization_url(
         client_id=client_id,
         redirect_uri=f"{settings.public_url}{CALLBACK_PATH}",
-        scope=["activity:read_all"],
+        scope=SCOPES,
         state=profile_id,
     )
 
 
-def exchange_code(code: str, app: dict | None = None) -> dict:
+def exchange_code(code: str, app: dict | None = None, scope: str | None = None) -> dict:
     """OAuth callback'ten gelen code'u access/refresh token'a çevirir.
 
     Profile özel uygulama kullanıldıysa client_id/secret token payload'ına da yazılır;
     token yenileme (refresh) aynı uygulamayla yapılmak zorunda."""
     client_id, client_secret = _app_credentials(app)
     client = Client()
-    info = client.exchange_code_for_token(client_id=client_id, client_secret=client_secret, code=code)
+    info, athlete = client.exchange_code_for_token(client_id=client_id, client_secret=client_secret, code=code, return_athlete=True)
     payload = dict(info)
+    payload["scope"] = scope or ""  # Strava'nın geri bildirdiği, kullanıcının onayladığı izinler
+    payload["athlete_id"] = athlete.id if athlete is not None else Client(access_token=info["access_token"]).get_athlete().id
     if app and app.get("client_id"):
         payload["client_id"] = str(client_id)
         payload["client_secret"] = client_secret
@@ -89,6 +99,14 @@ def _sync_stream_for_activity(client: Client, db: Session, activity: Activity) -
         point_count=point_count,
         data_json=json.dumps(data),
     ))
+
+
+def athlete_id(payload: dict) -> int | None:
+    """Bağlı Strava hesabının kimliği (eski bağlantılarda kayıtlı değilse API'den okunur)."""
+    if payload.get("athlete_id"):
+        return int(payload["athlete_id"])
+    client, _ = _client_from_payload(payload)
+    return client.get_athlete().id
 
 
 def _client_from_payload(payload: dict) -> tuple[Client, dict]:
@@ -149,4 +167,16 @@ def sync(profile: Profile, db: Session, credential: Credential, payload: dict) -
     except Exception as exc:  # noqa: BLE001
         return SyncResult("error", f"Aktivite çekme hatası: {exc}")
 
-    return SyncResult("ok", f"{added} aktivite senkronize edildi.")
+    message = f"{added} aktivite senkronize edildi."
+    if can_write(payload):
+        from .. import strava_merge
+
+        db.flush()
+        try:
+            merged = strava_merge.enrich_recent(db, profile, client)
+        except Exception:  # noqa: BLE001 - zenginleştirme senkronu bozmasın
+            logger.exception("Strava kaydı Hevy ayrıntılarıyla güncellenemedi")
+            merged = 0
+        if merged:
+            message += f" {merged} kuvvet kaydına Hevy ayrıntıları yazıldı."
+    return SyncResult("ok", message)

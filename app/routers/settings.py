@@ -8,7 +8,7 @@ from ..crypto import decrypt_payload, encrypt_payload
 from ..db import get_db
 from ..integrations import CONNECT_FUNCS, SOURCE_LABELS, SYNC_FUNCS
 from ..integrations import strava as strava_integration
-from .. import telegram_bot
+from .. import alerts, background, backup, telegram_bot
 from ..models import Credential, Profile
 from ..templating import templates
 
@@ -22,6 +22,36 @@ def _strava_app(profile: Profile | None) -> dict | None:
         return decrypt_payload(profile.strava_app_encrypted)
     except Exception:  # noqa: BLE001
         return None
+
+
+def _strava_can_write(credential: Credential | None) -> bool:
+    if credential is None:
+        return False
+    try:
+        return strava_integration.can_write(decrypt_payload(credential.encrypted_payload))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _strava_account_conflict(db: Session, profile_id: str, credential: Credential, new_athlete: int | None) -> str | None:
+    """Yeni onaylanan Strava hesabı başka bir profile bağlıysa ya da bu profilin önceki hesabından farklıysa uyarı metni."""
+    if not new_athlete:
+        return None
+    others = db.query(Credential).filter(Credential.source == "strava", Credential.profile_id != profile_id).all()
+    for other in others:
+        try:
+            if strava_integration.athlete_id(decrypt_payload(other.encrypted_payload)) == new_athlete:
+                return "Bu Strava hesabı başka bir profile bağlı; bu profilin sahibinin Strava hesabıyla giriş yapıp tekrar dene."
+        except Exception:  # noqa: BLE001 - diğer profilin token'ı okunamazsa karşılaştırma atlanır
+            continue
+    if credential.id is not None and credential.encrypted_payload:
+        try:
+            old = strava_integration.athlete_id(decrypt_payload(credential.encrypted_payload))
+        except Exception:  # noqa: BLE001
+            old = None
+        if old and old != new_athlete:
+            return "Onay farklı bir Strava hesabıyla verildi; bu profilin bağlı olduğu Strava hesabıyla giriş yapıp tekrar dene."
+    return None
 
 
 def _get_or_create_credential(db: Session, profile_id: str, source: str) -> Credential:
@@ -77,8 +107,25 @@ def settings_page(
             "telegram_shared": bool(telegram_bot.shared_token()),
             "tg_msg": tg_msg,
             "config_evening_hour": telegram_bot.settings.evening_check_hour,
+            "strava_can_write": _strava_can_write(credentials.get("strava")),
+            "backup_info": backup.summary(),
+            "backup_running": background.is_running("backup"),
+            "alert_hours": alerts.ALERT_HOURS,
         },
     )
+
+
+@router.post("/settings/backup")
+def backup_now(profile_id: str = Form("")):
+    """Yedeği hemen (arka planda) alır."""
+    def job():
+        try:
+            backup.run_backup()
+        except Exception:  # noqa: BLE001 - hata durum dosyasına yazıldı ve bildirildi
+            pass
+
+    background.start("backup", job)
+    return RedirectResponse(f"/settings?profile={profile_id}#yedekleme" if profile_id else "/settings#yedekleme", status_code=303)
 
 
 @router.post("/settings/{profile_id}/strava/app")
@@ -129,6 +176,7 @@ def strava_callback(
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
+    scope: str | None = None,
     db: Session = Depends(get_db),
 ):
     profile_id = state or ""
@@ -141,7 +189,7 @@ def strava_callback(
         return RedirectResponse(f"/settings?profile={profile_id}", status_code=303)
 
     try:
-        payload = strava_integration.exchange_code(code, _strava_app(db.get(Profile, profile_id)))
+        payload = strava_integration.exchange_code(code, _strava_app(db.get(Profile, profile_id)), scope)
     except Exception as exc:  # noqa: BLE001
         credential = _get_or_create_credential(db, profile_id, "strava")
         credential.last_sync_status = "error"
@@ -151,6 +199,13 @@ def strava_callback(
         return RedirectResponse(f"/settings?profile={profile_id}", status_code=303)
 
     credential = _get_or_create_credential(db, profile_id, "strava")
+    conflict = _strava_account_conflict(db, profile_id, credential, payload.get("athlete_id"))
+    if conflict:
+        # Onay ekranı tarayıcıda açık olan Strava hesabını bağlar; başka profilin hesabı bu profile yazılmasın.
+        credential.last_sync_message = conflict
+        db.add(credential)
+        db.commit()
+        return RedirectResponse(f"/settings?profile={profile_id}", status_code=303)
     credential.encrypted_payload = encrypt_payload(payload)
     credential.last_sync_status = "ok"
     credential.last_sync_message = "Bağlandı, ilk senkronizasyon bekleniyor."

@@ -11,3 +11,6 @@ docs
 deploy
 app/data
 app/static/uploads
+backups/
+*.db.before-restore-*
+tests/

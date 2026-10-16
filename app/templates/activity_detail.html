@@ -60,6 +60,8 @@
   {% endif %}
 </div>
 
+{% if rpe is defined %}<div style="margin-bottom: var(--space-5);">{{ macros.rpe_widget(rpe, '/activities/' ~ activity.id) }}</div>{% endif %}
+
 {% if map_points_json %}
 <div class="section">
   <div class="section-header">
@@ -90,6 +92,7 @@
 <div class="section">
   <div class="section-header"><h2>{{ _('Splitler') }}</h2></div>
   <div class="card" style="padding: 0;">
+    <div class="table-scroll">
     <table>
       <thead>
         <tr><th>Km</th><th>{{ _('Süre') }}</th><th>Pace</th><th>{{ _('Ort. Nabız') }}</th></tr>
@@ -105,6 +108,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
   {% if splits|selectattr('is_partial')|list %}
   <div class="metric-caption" style="margin-top:8px;">* {{ _('Tam km değil, koşunun kalan kısa parçası — pace o kısa mesafe için ekstrapole edilmiştir.') }}</div>

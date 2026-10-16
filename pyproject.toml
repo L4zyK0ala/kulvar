@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = [
+    # Kullanımdan kaldırma uyarıları hata sayılır (ör. datetime.utcnow() geri gelmesin).
+    "error::DeprecationWarning",
+]

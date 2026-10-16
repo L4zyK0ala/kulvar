@@ -4,6 +4,7 @@ import datetime as dt
 
 from sqlalchemy.orm import Session
 
+from .clock import utcnow
 from .models import Activity
 
 _ICON_KEYWORDS: list[tuple[tuple[str, ...], str]] = [
@@ -161,7 +162,7 @@ def _deduped_runs(db: Session, profile_id: str, since: dt.datetime) -> list[Acti
 
 
 def monthly_running_summary(db: Session, profile_id: str) -> dict | None:
-    month_start = dt.datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start = utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     runs = _deduped_runs(db, profile_id, month_start)
     if not runs:
         return None
@@ -178,7 +179,7 @@ def monthly_running_summary(db: Session, profile_id: str) -> dict | None:
 
 
 def weekly_running_distance(db: Session, profile_id: str, weeks: int = 10) -> dict:
-    since = dt.datetime.utcnow() - dt.timedelta(weeks=weeks)
+    since = utcnow() - dt.timedelta(weeks=weeks)
     runs = _deduped_runs(db, profile_id, since)
 
     today = dt.date.today()
